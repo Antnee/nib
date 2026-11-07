@@ -1,0 +1,12 @@
+// expect: error: `count` is private to `Counter`, so only its own code can use it
+class Counter {
+	private var count: Int = 0
+
+	construct() {
+		return Counter()
+	}
+}
+
+fn peek() -> Int {
+	return new Counter().count
+}

@@ -1,0 +1,8 @@
+// expect: error: `total` is a `let`, so it can't be set in a loop, which could set it more than once
+fn sum(items: List<Int>) -> Int {
+	let total: Int
+	for item in items {
+		total = item
+	}
+	return 0
+}

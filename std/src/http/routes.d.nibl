@@ -1,0 +1,329 @@
+import std.codec.{Codable, JsonCodec}
+import std.files.{Files}
+import std.time.{Duration}
+
+/// What an app's `http` takes: a function from a request to a response. A single function
+/// is a whole app; `Routes.serve` builds one from a route table.
+pub alias Handler = fn(Request) -> Response else ToResponse
+
+/// The rest of the chain after a middleware: the next middleware, or the handler.
+pub alias Next = fn(Request) -> Response
+
+/// Code that runs around the handlers it is attached to. Code before `next(req)` runs
+/// before the handler, code after it runs with the response in hand, and returning without
+/// calling `next` stops the request there. `next` returns a `Response`, because by then a
+/// handler's error has already become one.
+pub interface Middleware {
+	/// Handles `req`, usually by calling `next`.
+	fn handle(req: Request, next: Next) -> Response else ToResponse
+}
+
+/// A route's handler: a function that takes the request, if it reads it, then the values it
+/// wants from the guards around the route, each marked `@guard` and matched by type, in the order the
+/// guards run, then the path parameters it wants, each marked `@path` and matched by name to
+/// a `{name}` in the full pattern, in pattern order. Each path parameter's type implements
+/// `Parseable`, and each one in the pattern is taken by the handler or by a guard around it. It returns a `Response`,
+/// or fails with an error that implements `ToResponse`. The compiler checks every handler,
+/// markers included, against its route's full pattern, prefixes included, which must be
+/// literals. It's an interface rather than a function type, as a queue's handler is,
+/// because its parameters depend on the pattern, which a function type can't say. Nothing
+/// declares `implements RouteHandler`: any function or method of the right shape is one,
+/// and an error at the route names the parameter that doesn't fit.
+///
+/// ```
+/// Route.get("/checkout/{cartId}", fn(app) => app.checkout.show)
+/// ```
+///
+/// ```
+/// fn show(@guard user: User, @path cartId: CartId) -> Response else WebError {
+/// 	return Response.text("cart ${cartId} for ${user.name}")
+/// }
+/// ```
+pub interface RouteHandler<G> {}
+
+/// A group's guard: a function with the same parameters as a handler, the request if it
+/// reads it, then the values of guards around it (`@guard`), then path parameters from the prefixes so far
+/// (`@path`), that returns the value the routes inside can ask for, or fails with an error
+/// that implements `ToResponse`, which becomes the response. Its result type says what it
+/// checked, such as `StaffMember`, and is how a `@guard` parameter finds it, so no two
+/// guards around a route give the same type.
+///
+/// ```
+/// class Guards {
+/// 	construct(private identity: Identity, private members: Memberships) {}
+///
+/// 	fn member(req: Request, @path organisationId: OrganisationId) -> OrgMember else WebError {
+/// 		let user = try this.identity.user(req)
+/// 		return try this.members.find(user.id, organisation: organisationId) ?? fail WebError.NotFound
+/// 	}
+/// }
+/// ```
+pub interface RouteGuard<G, H> {}
+
+/// An events route's handler: a function that takes the request, if it reads it, then the
+/// `EventSink` it sends events through, then `@guard` and `@path` parameters as a route's handler does. It
+/// gives nothing: the stream ends when it returns, fails, or reaches the route's `timeout`.
+/// A failure before the first event becomes the response, as a handler's does.
+///
+/// ```
+/// fn statusEvents(req: Request, events: EventSink, @path orderId: OrderId) else WebError {
+/// 	for update in try this.orders.statusUpdates(orderId, after: req.lastEventId) {
+/// 		events.send(json: update, event: "status", id: update.id) catch _ {
+/// 			return
+/// 		}
+/// 	}
+/// }
+/// ```
+pub interface EventStreamHandler<G> {}
+
+/// A WebSocket route's handler: a function that takes the request, if it reads it, then the
+/// `WebSocket`,
+/// then `@guard` and `@path` parameters as a route's handler does. It gives nothing: the
+/// socket closes when it returns, fails, or reaches the route's `timeout`. Guards run once,
+/// when the connection opens.
+pub interface WebSocketHandler<G> {}
+
+/// Where an events route's handler sends events, as server-sent events. The host sets the
+/// headers, so the stream is neither cached nor buffered by a proxy, and sends a keep-alive
+/// every 15 seconds.
+pub interface EventSink {
+	/// Sends an event whose data is `json`. `event` names it, for the browser's
+	/// `addEventListener`, and `id` is what `req.lastEventId` gives after a reconnect. Fails
+	/// once the browser has gone.
+	fn send<T: Codable<JsonCodec>>(
+		named json: T,
+		named event: String? = null,
+		named id: String? = null,
+	) else SocketError
+
+	/// Sends an event whose data is `text`.
+	fn send(named text: String, named event: String? = null, named id: String? = null) else SocketError
+}
+
+/// An open WebSocket. The host answers pings and enforces a maximum message size. To read
+/// and write at the same time, `start` a task that reads while the handler writes.
+pub interface WebSocket {
+	/// The next message from the client, or `null` once it has closed the socket.
+	fn receive() -> SocketMessage? else SocketError
+
+	/// Sends `text` as a text message.
+	fn send(named text: String) else SocketError
+
+	/// Sends `json` as a text message holding JSON.
+	fn send<T: Codable<JsonCodec>>(named json: T) else SocketError
+
+	/// Closes the socket. Returning from the handler closes it too.
+	fn close()
+}
+
+/// A message from a WebSocket's client.
+pub enum SocketMessage {
+	/// A text message.
+	Text(text: String)
+
+	/// A binary message.
+	Binary(bytes: Bytes)
+}
+
+/// Why sending or receiving on a connection that stays open failed.
+pub enum SocketError implements Error {
+	/// The client has gone, or the route's `timeout` closed the connection.
+	Closed
+
+	/// A message was larger than the host accepts.
+	TooLarge
+
+	/// What went wrong.
+	override get message: String
+}
+
+/// Marks a handler's or guard's parameter as the value of the guard around its route that
+/// gives that type, such as `@guard user: User`.
+pub attribute guard {}
+
+/// Marks a handler's or guard's parameter as the path parameter with the same name, such as
+/// `{cartId}` for `@path cartId: CartId`.
+pub attribute path {}
+
+/// Picks an error reporter from the per-request container. The reporter is called with a
+/// handler's error and its request, before the error becomes a response.
+pub alias ErrorHook<S> = fn(S) -> fn(ToResponse, Request) -> Void
+
+/// Whether a route checks the CSRF token. It is checked on unsafe methods unless a route
+/// turns it off, as a webhook called by another server would.
+pub enum Csrf {
+	On
+	Off
+}
+
+/// A route table. `S` is the container made fresh for each request; each entry's function,
+/// such as `fn(app) => app.auth.signIn`, picks a handler from it, and runs only when its
+/// route matches.
+///
+/// ```
+/// fn routes() -> Routes<Services> {
+/// 	return Routes(
+/// 		routes: [
+/// 			Route.get("/", fn(app) => app.site.home),
+/// 			Route.post("/sign-in", fn(app) => app.auth.signIn),
+/// 		],
+/// 	)
+/// }
+/// ```
+pub record Routes<S> {
+	/// Middleware for every route, outermost first.
+	using: List<fn(S) -> Middleware> = []
+	/// Called with each handler error before it becomes a response, such as to send it to
+	/// an error tracker.
+	onError: ErrorHook<S>? = null
+	/// The routes and groups.
+	routes: List<Route<S>>
+
+	/// The app's request handler. `services` makes a fresh container for each request, so
+	/// nothing built for one request is seen by the next.
+	fn serve(services: fn() -> S) -> Handler
+}
+
+/// One entry in a route table: a route or a group of routes. `G` is the value of the
+/// innermost guard around it, or `Void` outside any guarded group; a handler can ask for any
+/// guard's value around it, which the compiler checks.
+///
+/// A pattern has literal segments, `{name}` for one segment and `{name...}` for the rest of
+/// the path. Path parameters arrive as typed handler parameters marked `@path`, in pattern
+/// order, after any guards' values; one whose type doesn't parse it means
+/// the route doesn't match, so the answer is a 404. The most specific pattern wins, whatever the order.
+///
+/// HEAD is answered for every GET route, and OPTIONS and `405 Method Not Allowed` by the
+/// router.
+pub record Route<S, G = Void> {
+	/// A route for one or more methods. `using` adds middleware, run inside the table's and
+	/// the group's. `csrf` applies when a method is unsafe. `timeout` is the request's
+	/// deadline.
+	static fn on(
+		pattern: String,
+		handler: fn(S) -> RouteHandler<G>,
+		named methods: List<Method>,
+		named using: List<fn(S) -> Middleware> = [],
+		named csrf: Csrf = Csrf.On,
+		named timeout: Duration = Duration.of(seconds: 30),
+	) -> Route<S, G>
+
+	/// A GET route. `using` adds middleware, run inside the table's and the group's, and
+	/// `timeout` raises the deadline for a slow page or a long download.
+	///
+	/// ```
+	/// Route.get("/reports/{id}.csv", fn(app) => app.reports.export, timeout: Duration.of(minutes: 10))
+	/// ```
+	static fn get(
+		pattern: String,
+		handler: fn(S) -> RouteHandler<G>,
+		named using: List<fn(S) -> Middleware> = [],
+		named timeout: Duration = Duration.of(seconds: 30),
+	) -> Route<S, G>
+
+	/// Serves `files` beneath `prefix`, so `/assets/app.css` is the file `app.css`. It
+	/// answers GET and HEAD, and only for a file in the set, so a path can't reach anything
+	/// else: any other path is a 404, and it never lists a directory. The content type comes
+	/// from the file's extension. Each answer has an ETag made from the file's contents and
+	/// `Cache-Control: no-cache`, so a browser checks each time and gets a `304 Not Modified`
+	/// when nothing has changed.
+	///
+	/// ```
+	/// Route.files("/assets", env.files("assets"))
+	/// ```
+	static fn files(prefix: String, files: Files) -> Route<S, G>
+
+	/// A route that holds its connection open to send server-sent events, such as a page's
+	/// live status. `timeout` is required, so no connection is open for ever: at the limit
+	/// the host closes the stream, and the browser's `EventSource` reconnects, sending the
+	/// last event's `id` as `req.lastEventId`. A browser on HTTP/1.1 opens about six
+	/// connections to a site, and each open stream uses one; HTTP/2 lifts that limit.
+	///
+	/// ```
+	/// Route.events("/orders/{orderId}/status", fn(app) => app.orders.statusEvents, timeout: Duration.of(hours: 1))
+	/// ```
+	static fn events(
+		pattern: String,
+		handler: fn(S) -> EventStreamHandler<G>,
+		named using: List<fn(S) -> Middleware> = [],
+		named timeout: Duration,
+	) -> Route<S, G>
+
+	/// A route that upgrades to a WebSocket. `timeout` is required, as for `events`. Browsers
+	/// don't apply CORS to WebSockets, so the host refuses a connection from a page on another
+	/// origin, unless `origins` lists it: the CSRF protection, for a socket. Session cookies
+	/// are read when the connection opens, so guards work as on any route.
+	///
+	/// ```
+	/// Route.websocket("/rooms/{roomId}", fn(app) => app.chat.join, timeout: Duration.of(hours: 1))
+	/// ```
+	static fn websocket(
+		pattern: String,
+		handler: fn(S) -> WebSocketHandler<G>,
+		named using: List<fn(S) -> Middleware> = [],
+		named origins: List<Url> = [],
+		named timeout: Duration,
+	) -> Route<S, G>
+
+	/// A POST route. It checks the CSRF token unless `csrf` is `Csrf.Off`.
+	static fn post(
+		pattern: String,
+		handler: fn(S) -> RouteHandler<G>,
+		named using: List<fn(S) -> Middleware> = [],
+		named csrf: Csrf = Csrf.On,
+		named timeout: Duration = Duration.of(seconds: 30),
+	) -> Route<S, G>
+
+	/// A PUT route. It checks the CSRF token unless `csrf` is `Csrf.Off`.
+	static fn put(
+		pattern: String,
+		handler: fn(S) -> RouteHandler<G>,
+		named using: List<fn(S) -> Middleware> = [],
+		named csrf: Csrf = Csrf.On,
+		named timeout: Duration = Duration.of(seconds: 30),
+	) -> Route<S, G>
+
+	/// A PATCH route. It checks the CSRF token unless `csrf` is `Csrf.Off`.
+	static fn patch(
+		pattern: String,
+		handler: fn(S) -> RouteHandler<G>,
+		named using: List<fn(S) -> Middleware> = [],
+		named csrf: Csrf = Csrf.On,
+		named timeout: Duration = Duration.of(seconds: 30),
+	) -> Route<S, G>
+
+	/// A DELETE route. It checks the CSRF token unless `csrf` is `Csrf.Off`.
+	static fn delete(
+		pattern: String,
+		handler: fn(S) -> RouteHandler<G>,
+		named using: List<fn(S) -> Middleware> = [],
+		named csrf: Csrf = Csrf.On,
+		named timeout: Duration = Duration.of(seconds: 30),
+	) -> Route<S, G>
+
+	/// Routes that only run once `requiring` has produced a value, which each handler and
+	/// guard inside can ask for as a `@guard` parameter of its type. `prefix` is put in front
+	/// of every pattern in the group, and its path parameters can be taken by the guard or by
+	/// the routes inside. Middleware in `using` runs first. If the
+	/// guard fails, its error becomes the response, such as a redirect to the sign-in page.
+	///
+	/// ```
+	/// Route.group(prefix: "/admin", requiring: fn(app) => app.guards.staff, routes: [
+	/// 	Route.get("/orders/{orderId}", fn(app) => app.admin.order),
+	/// ])
+	/// ```
+	static fn group<H>(
+		named prefix: String = "",
+		named requiring: fn(S) -> RouteGuard<G, H>,
+		named using: List<fn(S) -> Middleware> = [],
+		named routes: List<Route<S, H>>,
+	) -> Route<S, G>
+
+	/// Routes that share a path prefix, middleware, or both. A prefix's path parameters go to
+	/// each handler, before the route's own.
+	static fn group(
+		named prefix: String = "",
+		named using: List<fn(S) -> Middleware> = [],
+		named routes: List<Route<S, G>>,
+	) -> Route<S, G>
+}

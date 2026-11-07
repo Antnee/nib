@@ -1,0 +1,31 @@
+import std.io.{IoError}
+
+/// Compresses bytes into the gzip format.
+///
+/// ```
+/// let packed = gzip.compress(bytes)
+/// ```
+pub fn compress(data: Bytes) -> Bytes
+
+/// Decompresses gzip data.
+pub fn decompress(data: Bytes) -> Bytes else GzipError
+
+/// Why gzip data couldn't be decompressed.
+pub enum GzipError implements Error {
+	/// The data isn't valid gzip, or is cut short.
+	Corrupt(reason: String)
+
+	/// What went wrong.
+	override get message: String
+}
+
+/// Decompresses a stream of gzip data as it's read. Damaged data stops it with
+/// `IoError.Malformed`.
+///
+/// ```
+/// let rows = csv.decoding<SaleRow>(gzip.decompressing(req.body.stream()))
+/// ```
+pub fn decompressing(source: Iterable<Bytes, IoError>) -> Iterable<Bytes, IoError>
+
+/// Compresses a stream of bytes as it's read.
+pub fn compressing(source: Iterable<Bytes, IoError>) -> Iterable<Bytes, IoError>

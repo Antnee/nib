@@ -1,0 +1,21 @@
+// expect: ok
+record MissingKey implements Error {
+	key: String
+
+	override get message: String => "${this.key} is missing"
+}
+
+enum ConfigProblem implements Error {
+	Lookup(from MissingKey)
+	Unreadable
+
+	override get message: String => match this {
+		ConfigProblem.Lookup => "a setting is missing"
+		ConfigProblem.Unreadable => "the settings file can't be read"
+	}
+}
+
+// An enum that isn't an `Error` may wrap anything.
+enum Outcome {
+	Skipped(from MissingKey)
+}

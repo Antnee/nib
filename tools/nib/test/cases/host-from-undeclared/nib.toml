@@ -1,0 +1,7 @@
+# expect: error: `from = "DB_URL"` names a variable that isn't declared in [config]
+[package]
+name = "demo"
+
+[databases.main]
+engine = "postgres"
+from = "DB_URL"

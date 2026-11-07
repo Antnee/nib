@@ -1,0 +1,14 @@
+// expect: ok
+fn describe(name: String?, count: Int) -> String {
+	var seen = count
+	match name {
+		null => seen--
+		other => seen++
+	}
+	let label = match name {
+		null => "nobody"
+		other => other.toUpperCase()
+	}
+	let names = ["a", "b"]
+	return names.contains(label) ? label : "${label} ${seen}"
+}

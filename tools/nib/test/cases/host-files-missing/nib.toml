@@ -1,0 +1,6 @@
+# expect: error: [files] `assets` has `path = "assets"`, but there's no such directory beside nib.toml
+[package]
+name = "demo"
+
+[files.assets]
+path = "assets"

@@ -1,0 +1,27 @@
+// expect: error: `socket` is a `Socket`, which `@yaml` can't write or read: mark `Socket` `@yaml` too, or store something it can write
+import std.codec.{Codable, Codec}
+
+class YamlCodec implements Codec {}
+
+attribute yaml implements Codable<YamlCodec> {}
+
+class Socket {}
+
+@yaml
+record Settings {
+	name: String
+	retries: Int
+}
+
+@yaml
+record Broken {
+	socket: Socket
+}
+
+fn write<T: Codable<YamlCodec>>(value: T) -> String {
+	return ""
+}
+
+fn settings() -> String {
+	return write(Settings(name: "shop", retries: 3))
+}

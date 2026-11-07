@@ -1,0 +1,4 @@
+// expect: warning: this is a `String`, which can't be `null`, so `??` never uses its right side
+fn run(name: String) -> String {
+	return name ?? "none"
+}

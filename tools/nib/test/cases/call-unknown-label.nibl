@@ -1,0 +1,4 @@
+// expect: error: `text.padStart` has no parameter `fil`; did you mean `fill`?
+fn pad(text: String) -> String {
+	return text.padStart(6, fil: "0")
+}

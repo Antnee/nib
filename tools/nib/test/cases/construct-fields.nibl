@@ -1,0 +1,56 @@
+// expect: ok
+// A `construct` without a body declares its parameters as fields and builds the class.
+interface Clock {
+	fn now() -> Int
+}
+
+class Greeter {
+	construct(
+		private clock: Clock,
+		private greeting: String,
+		named private punctuation: String = "!",
+		var greeted: Int,
+	) {}
+
+	private var lastName: String? = null
+	private lazy hour: Int = this.clock.now()
+
+	fn greet(name: String) -> String {
+		this.greeted += 1
+		this.lastName = name
+		return "${this.greeting}, ${name}${this.punctuation} (${this.hour})"
+	}
+}
+
+class Box<T> {
+	construct(private item: T) {}
+
+	fn get() -> T {
+		return this.item
+	}
+}
+
+class Silent {
+	var calls: Int = 0
+}
+
+fn greeters(clock: Clock) -> List<Greeter> {
+	return [
+		new Greeter(clock, "Hello", 0),
+		new Greeter(clock, "Hi", 0, punctuation: "?"),
+	]
+}
+
+fn boxed() -> Int {
+	return new Box(3).get()
+}
+
+fn silent() -> Int {
+	return new Silent().calls
+}
+
+// `secret` is a string tag, not a keyword, so it still names things.
+fn hidden(secret: Int) -> Int {
+	let doubled = secret * 2
+	return doubled
+}

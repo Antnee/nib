@@ -1,0 +1,2 @@
+// expect: error: must be UPPER_SNAKE_CASE
+const maxItems = 10

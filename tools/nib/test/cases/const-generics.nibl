@@ -1,0 +1,4 @@
+// expect: error: const generic parameters are reserved
+record Matrix<const N: Int> {
+	cells: List<Int>
+}

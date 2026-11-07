@@ -1,0 +1,17 @@
+import std.db.{Db}
+import std.migrations.{Migration, MigrationError}
+
+record CreateUserTokens implements Migration {
+	override fn apply(db: Db) else MigrationError {
+		try db.execute(sql"""
+			create table user_tokens (
+				hash bytea primary key,
+				user_id bigint not null references users (id) on delete cascade,
+				purpose text not null check (purpose in ('confirm', 'reset_password')),
+				expires_at timestamptz not null,
+				used_at timestamptz
+			)
+			""")
+		try db.execute(sql"create index user_tokens_user_id on user_tokens (user_id)")
+	}
+}

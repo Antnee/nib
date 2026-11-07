@@ -1,0 +1,6 @@
+// expect: error: `std.testing` is for tests, so only test files can import it
+import std.testing.{FakeClock}
+
+fn clock() -> FakeClock {
+	return FakeClock.at("2026-09-22T09:00:00Z")
+}

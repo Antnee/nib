@@ -1,0 +1,6 @@
+// expect: error: a `Duration` has no `*`: arithmetic operators are for numbers only, so use a method, such as `times`
+import std.time.{Duration}
+
+fn backoff(attempt: Int) -> Duration {
+	return Duration.of(seconds: 2) * attempt
+}

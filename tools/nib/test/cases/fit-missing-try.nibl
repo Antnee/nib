@@ -1,0 +1,5 @@
+// expect: error: the call can fail, so put `try` in front, or handle the error with `catch`
+fn run(text: String) -> Int else ParseError {
+	let n: Int = Int.parse(text)
+	return n
+}

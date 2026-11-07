@@ -1,0 +1,8 @@
+// expect: error: a value can't start with `.`: write a closure, as `fn(x) => x.total`
+record Line {
+	total: Int
+}
+
+fn totals(lines: List<Line>) -> List<Int> {
+	return lines.map(.total)
+}

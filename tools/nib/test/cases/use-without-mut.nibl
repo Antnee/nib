@@ -1,0 +1,5 @@
+// expect: error: `use` only lists `mut` captures
+fn f() {
+	let n = 1
+	let g = fn() use (n) => n
+}

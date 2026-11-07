@@ -1,0 +1,9 @@
+// expect: error: `label` is set once, in the code around it, so a closure can't set it
+fn describe(items: List<Int>) -> String {
+	let label: String
+	items.forEach(fn(item) {
+		label = "x"
+	})
+	label = "y"
+	return label
+}

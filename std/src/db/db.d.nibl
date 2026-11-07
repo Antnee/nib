@@ -1,0 +1,295 @@
+import std.codec.{Case, Codable, DbCodec}
+import std.crypto.{BlindIndex, Keyring}
+import std.time.{Duration}
+
+/// A query written as a `sql"…"` literal. Every `${…}` in it is sent as a bound parameter,
+/// never pasted into the text, so a value can't change what the query does.
+///
+/// ```
+/// let query = sql"select id from users where email_idx = ${index}"
+/// ```
+///
+/// The one exception is a `Sql` inside another's `${…}`, which is pasted in as SQL. It's
+/// safe, because its own `${…}` are still parameters, and it's how a query is built from
+/// parts, such as the filters a search form asks for. A column or a direction a visitor
+/// chooses comes from an enum whose cases each give a fixed `sql"…"`, never from text.
+///
+/// Each different text is a different statement, prepared and kept on its own.
+pub record Sql {
+	/// `parts` with `separator` between them, such as a list of columns.
+	static fn join(parts: List<Sql>, named separator: Sql) -> Sql
+
+	/// Each condition in brackets, joined with `and`, or `true` when there are none: the
+	/// `where` clause of a search whose filters are all optional.
+	///
+	/// ```
+	/// var filters: List<Sql> = []
+	/// let folder = form.folder
+	/// if folder is not null {
+	/// 	filters.push(sql"folder = ${folder}")
+	/// }
+	/// let query = sql"select id, text from notes where ${Sql.and(filters)}"
+	/// ```
+	static fn and(conditions: List<Sql>) -> Sql
+
+	/// Each condition in brackets, joined with `or`, or `false` when there are none.
+	static fn or(conditions: List<Sql>) -> Sql
+}
+
+/// A database, reached through a pool the host owns. Each call borrows a connection for as
+/// long as it needs one and gives it back, so a dropped connection is replaced by the pool
+/// and never seen by the code holding the `Db`. A connection isn't kept for a whole request,
+/// as PHP keeps one: a request that waits on another service holds no connection meanwhile,
+/// so a small pool serves many requests at once.
+///
+/// Most calls hold a connection only while they run. A transaction holds one from `begin`
+/// until it ends, and a stream from `rows` holds one until its loop ends. When every
+/// connection is in use, a call waits up to 5 seconds for one to come back, and then fails
+/// with `PoolTimedOut`. The pool has 10 connections, unless the manifest's
+/// `pool-size-from` names a variable that says how many.
+///
+/// Each connection prepares a statement the first time it runs that `sql"…"` text, and keeps
+/// it, so a statement run in a loop is prepared once and then sends only its parameters.
+///
+/// Rows are decoded into the type you ask for, by column name. A record marked `@db` says
+/// how its fields map to columns.
+pub interface Db {
+	/// Runs a statement that returns no rows, such as `insert`, `update` or `create table`.
+	/// `insertId` gives an inserted row's generated ID, and `countChanges` the number of rows
+	/// a statement changed.
+	fn execute(statement: Sql) else DbError
+
+	/// Runs an `insert` of one row and gives the ID the database generated for it, read from
+	/// the same statement, so no other connection's insert can be mixed up with it. MySQL
+	/// reports it with the insert. On Postgres, `returning` is added for the table's identity
+	/// column, which the compiler reads from the schema. SQLite reads the connection's last
+	/// row ID. A table with no generated ID is a compile error.
+	///
+	/// ```
+	/// let id = try db.insertId<NoteId>(sql"insert into notes (text) values (${text})")
+	/// ```
+	fn insertId<K: Codable<DbCodec>>(statement: Sql) -> K else DbError
+
+	/// Runs an `insert`, `update` or `delete` and gives the number of rows it matched. An
+	/// update that sets a value it already had still counts, on every engine, so a count of 1
+	/// means the row was found.
+	///
+	/// ```
+	/// let removed = try db.countChanges(sql"delete from sessions where expires_at < ${now}")
+	/// ```
+	fn countChanges(statement: Sql) -> Int else DbError
+
+	/// Every row the query returns, in order.
+	fn query<T: Codable<DbCodec>>(statement: Sql) -> List<T> else DbError
+
+	/// The row the query returns, or `null` if it returns none. More than one row is an
+	/// error. When a missing row would be a bug, say so with `?? panic(…)`.
+	///
+	/// ```
+	/// let order = try db.queryOne<Order>(sql"insert into orders … returning *")
+	/// 	?? panic("an insert returns its row")
+	/// ```
+	fn queryOne<T: Codable<DbCodec>>(statement: Sql) -> T? else DbError
+
+	/// The single column of the single row the query returns, such as a `count(*)`.
+	fn scalar<T: Codable<DbCodec>>(statement: Sql) -> T else DbError
+
+	/// The query's rows, fetched as the loop reaches them, so a large table never has to fit
+	/// in memory. They come through a cursor, a batch at a time, so the loop can run other
+	/// statements on the same `db` between rows. Use `batched` to work on them a batch at a
+	/// time.
+	///
+	/// The rows are the ones the query matched when it started: a change the loop makes
+	/// doesn't show in the rows still to come. The stream holds a connection until the loop
+	/// ends, including when it ends early. On a `Tx`, the loop's statements share that
+	/// connection and are part of the transaction. On a pooled `Db`, each borrows another
+	/// connection and commits on its own, so begin a transaction when they must succeed or
+	/// fail together.
+	///
+	/// ```
+	/// for batch in try db.rows<OrderIdRow>(sql"select id from orders order by id").batched(500) {
+	/// 	print(batch.length)
+	/// }
+	/// ```
+	fn rows<T: Codable<DbCodec>>(statement: Sql) -> Iterable<T, DbError>
+
+	/// Inserts a record into the table its `@db(table:)` names.
+	fn insert<T: Codable<DbCodec>>(row: T) else DbError
+
+	/// Inserts every record into the table their `@db(table:)` names, several hundred rows to
+	/// a statement, which is much faster than one at a time. Either every row is inserted or
+	/// none is: it runs in a transaction of its own, or a savepoint inside one. `rows` can be
+	/// a list or a generator that can't fail, and is read a batch at a time, so a generator's
+	/// rows never all have to be in memory.
+	///
+	/// ```
+	/// try db.insertAll(lines)
+	/// ```
+	fn insertAll<T: Codable<DbCodec>>(rows: Iterable<T>) else DbError
+
+	/// Starts a transaction. Called on a `Tx`, it starts a nested one (a savepoint), which
+	/// commits or rolls back without ending the outer transaction.
+	///
+	/// `isolation` is the database's own default when it's left out: repeatable read on MySQL
+	/// and read committed on Postgres. A savepoint has its transaction's isolation.
+	///
+	/// A transaction is also the way to run several statements on one connection: everything
+	/// it runs uses the connection it holds.
+	///
+	/// ```
+	/// let tx = try db.begin()
+	/// defer tx.rollback()
+	/// try tx.execute(sql"delete from carts where id = ${id}")
+	/// try tx.commit()
+	/// ```
+	fn begin(named isolation: Isolation? = null) -> Tx else DbError
+
+	/// The same database, with a keyring that fields marked `@db(encrypt: name)` are
+	/// encrypted and decrypted with. A transaction begun from it has the keyring too.
+	fn withKeyring(name: String, keyring: Keyring) -> Db
+
+	/// `value` encrypted with the keyring attached as `keyring`, for hand-written SQL that
+	/// writes an encrypted column. Fails with `DbError.NoKeyring` if none is attached.
+	///
+	/// ```
+	/// let email = try db.encrypt(address, keyring: "pii")
+	/// ```
+	fn encrypt(value: String, named keyring: String) -> Bytes else DbError
+
+	/// The hash of `value` for `index`, made with the index's keyring, for hand-written SQL
+	/// that looks up or writes an encrypted column. Fails with `DbError.NoKeyring` if the
+	/// keyring isn't attached.
+	///
+	/// ```
+	/// let index = try db.blindIndex(EMAIL_INDEX, address)
+	/// let query = sql"select id from users where email_idx = ${index}"
+	/// ```
+	fn blindIndex(index: BlindIndex, value: String) -> Bytes else DbError
+}
+
+/// A transaction. It is a `Db`, so code that takes a `Db` works inside one without knowing.
+/// Nothing it does is visible to anyone else until `commit`. Everything it runs, streams
+/// included, uses the one connection it holds, so it never waits for the pool again.
+pub class Tx implements Db {
+	/// Makes the transaction's changes permanent.
+	fn commit() else DbError
+
+	/// Discards the transaction's changes. It can't fail, and after `commit` it does
+	/// nothing, so it can always be deferred. If the database doesn't answer, the
+	/// connection is thrown away, which discards the changes too.
+	fn rollback()
+}
+
+/// How much a transaction sees of other transactions' changes while it runs.
+pub enum Isolation {
+	/// Each statement sees what had been committed when it started.
+	ReadCommitted
+
+	/// Every statement sees what had been committed when the transaction's first one started.
+	RepeatableRead
+
+	/// The transaction behaves as if no other ran at the same time. One that can't fails with
+	/// `DbError.Conflict`, to be run again.
+	Serializable
+}
+
+/// What a database call can fail with.
+pub enum DbError implements Error {
+	/// The connection dropped in the middle of the call.
+	ConnectionLost
+
+	/// No keyring is attached under `name`: see `withKeyring`.
+	NoKeyring(name: String)
+
+	/// Every connection in the pool stayed in use for `waited`, the pool's limit, so the call
+	/// gave up. Requests are holding connections for longer than the pool can spare, often
+	/// by streaming rows while their loop waits for another connection.
+	PoolTimedOut(waited: Duration)
+
+	/// The statement would have given two rows the same value in a unique index or primary
+	/// key, such as a second account with one email address. `constraint` is the index's
+	/// name, as the schema declares it, such as `tags_name_key`. It's the same on every
+	/// engine: SQLite reports only the columns, and the host finds the index from them.
+	///
+	/// Catch it where a duplicate is an answer rather than a failure. For an insert that
+	/// should do nothing when the row exists, `on conflict do nothing` says so in the
+	/// statement instead. On Postgres, a transaction can't run another statement after
+	/// this error: return, so its deferred rollback runs, or run the statement in a
+	/// savepoint (`tx.begin()`) to carry on.
+	///
+	/// ```
+	/// db.execute(sql"update tags set name = ${to} where name = ${from}") catch err {
+	/// 	if err is DbError.Duplicate(constraint: "tags_name_key") {
+	/// 		return Renaming.NameTaken
+	/// 	}
+	/// 	fail err
+	/// }
+	/// ```
+	Duplicate(constraint: String)
+
+	/// The database refused the statement for another reason, such as a foreign key or a
+	/// check constraint. `code` is the database's own error code, such as Postgres's `23503`.
+	Rejected(code: String, reason: String)
+
+	/// The transaction clashed with another: a deadlock, or a serializable transaction that
+	/// couldn't be kept apart from one. The database has rolled it back, and running the
+	/// whole transaction again usually succeeds.
+	Conflict
+
+	/// `scalar` found no row, or `insertId` ran a statement that generated no ID.
+	NoRow
+
+	/// `queryOne` or `scalar` found more than one row.
+	TooManyRows
+
+	/// A column's value couldn't be decoded into the field's type.
+	Decode(column: String, reason: String)
+
+	/// A description of the failure, without the query's parameters.
+	override get message: String
+}
+
+/// How a record, or one of its fields, maps to the database.
+///
+/// On a type, `table` names the table `db.insert` writes to, and `columns` is the naming
+/// policy for every field. With no policy, a field maps to the column with exactly its
+/// name.
+///
+/// ```
+/// @db(table: "users", columns: Case.Snake)
+/// record User {
+/// 	id: UserId
+///
+/// 	@db(encrypt: "pii", blindIndex: EMAIL_INDEX)
+/// 	email: Email
+/// }
+/// ```
+pub attribute db implements Codable<DbCodec> {
+	/// On a type: the table it is inserted into.
+	table: String? = null
+
+	/// On a type: how field names become column names.
+	columns: Case? = null
+
+	/// On a field: the column's name, overriding the type's policy.
+	column: String? = null
+
+	/// On a field: the column holds JSON, decoded with the field type's JSON codec.
+	json: Bool = false
+
+	/// On a field: the value is a record stored across several columns, one per field.
+	embed: Bool = false
+
+	/// On an embedded field: put in front of each of its column names, such as `total_`.
+	prefix: String? = null
+
+	/// On a field: encrypt the column with the keyring of this name (see
+	/// `Db.withKeyring`).
+	encrypt: String? = null
+
+	/// On an encrypted field: also store a blind index of it in the index's column, a keyed
+	/// hash of the value that lookups and unique constraints use instead of the ciphertext.
+	/// The hash uses the index's keyring. A blind index is only for a field marked `encrypt`
+	/// as well, so the field says it's encrypted rather than the index implying it.
+	blindIndex: BlindIndex? = null
+}

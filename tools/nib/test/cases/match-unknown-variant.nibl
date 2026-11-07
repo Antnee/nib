@@ -1,0 +1,18 @@
+// expect: error: `LoadError` has no variant `Brokn`; did you mean `Broken`?
+enum LoadError implements Error {
+	Missing
+	Broken
+
+	override get message: String => "load failed"
+}
+
+fn load(path: String) -> String else LoadError {
+	return path
+}
+
+fn describe(e: LoadError) -> String {
+	return match e {
+		Missing => "missing"
+		Brokn => "broken"
+	}
+}

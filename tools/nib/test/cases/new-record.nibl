@@ -1,0 +1,8 @@
+// expect: only error: `Point` is a record, a value, so it's built without `new`: `Point(…)`
+record Point {
+	x: Int
+}
+
+fn origin() -> Point {
+	return new Point(x: 0)
+}

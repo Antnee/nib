@@ -1,0 +1,10 @@
+// expect: error: `Point(…)` leaves out `y`, which has no default
+record Point {
+	x: Int
+	y: Int
+	label: String = ""
+}
+
+fn origin() -> Point {
+	return Point(x: 0)
+}

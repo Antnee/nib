@@ -1,0 +1,5 @@
+// expect: error: locals and parameters can't shadow each other
+fn f(x: Int) -> Int {
+	let x = 2
+	return x
+}

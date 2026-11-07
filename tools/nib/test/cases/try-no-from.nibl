@@ -1,0 +1,19 @@
+// expect: error: this `try` passes on a `LoadError`, but `run` fails with a `ConfigError`, which can't hold one: add a variant that takes it, as `Load(from LoadError)`
+enum LoadError implements Error {
+	Missing
+	Broken
+
+	override get message: String => "load failed"
+}
+
+fn load(path: String) -> String else LoadError {
+	return path
+}
+
+enum ConfigError {
+	Invalid
+}
+
+fn run() -> String else ConfigError {
+	return try load("a")
+}

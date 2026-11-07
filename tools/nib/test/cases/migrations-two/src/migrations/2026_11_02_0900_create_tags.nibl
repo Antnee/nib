@@ -1,0 +1,14 @@
+import std.db.{Db}
+import std.migrations.{Migration, MigrationError}
+
+record CreateTags implements Migration {
+	override fn apply(db: Db) -> Void else MigrationError {
+		try db.execute(sql"create table tags (name text primary key)")
+	}
+}
+
+record CreateNotes implements Migration {
+	override fn apply(db: Db) -> Void else MigrationError {
+		try db.execute(sql"create table notes (body text)")
+	}
+}

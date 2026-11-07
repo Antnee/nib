@@ -1,0 +1,2 @@
+// expect: error: the standard library has no module `std.htp`; did you mean `std.http`?
+import std.htp

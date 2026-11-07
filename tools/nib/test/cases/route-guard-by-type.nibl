@@ -1,0 +1,75 @@
+// expect: ok
+// A handler takes the value of any guard around it, by type, and any path parameter, by name.
+import std.http.{@guard, @path, Method, Request, Response, Route, Routes, ToResponse}
+
+type ShopId: Int implements Parseable
+type OrderId: Int implements Parseable
+
+enum WebError implements ToResponse {
+	NotFound
+
+	override get message: String => "not found"
+
+	override fn toResponse() -> Response {
+		return Response.notFound()
+	}
+}
+
+record User {
+	name: String
+}
+
+record Shop {
+	id: ShopId
+}
+
+class Guards {
+	fn user(req: Request) -> User else WebError {
+		fail WebError.NotFound
+	}
+
+	fn shop(req: Request, @guard user: User, @path shopId: ShopId) -> Shop else WebError {
+		fail WebError.NotFound
+	}
+}
+
+class Pages {
+	fn home(req: Request) -> Response {
+		return Response.notFound()
+	}
+
+	fn order(
+		req: Request,
+		@guard user: User,
+		@guard shop: Shop,
+		@path shopId: ShopId,
+		@path orderId: OrderId,
+	) -> Response {
+		return Response.notFound()
+	}
+
+	fn account(req: Request, @guard user: User) -> Response {
+		return Response.notFound()
+	}
+
+	fn file(req: Request, @path path: String) -> Response {
+		return Response.notFound()
+	}
+}
+
+class Services {
+	construct(pub guards: Guards, pub pages: Pages) {}
+}
+
+fn routes() -> Routes<Services> {
+	return Routes(routes: [
+		Route.get("/", fn(app) => app.pages.home),
+		Route.on("/files/{path...}", fn(app) => app.pages.file, methods: [Method.Get, Method.Head]),
+		Route.group(requiring: fn(app) => app.guards.user, routes: [
+			Route.get("/account", fn(app) => app.pages.account),
+			Route.group(prefix: "/shops/{shopId}", requiring: fn(app) => app.guards.shop, routes: [
+				Route.get("/orders/{orderId}", fn(app) => app.pages.order),
+			]),
+		]),
+	])
+}

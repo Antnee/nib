@@ -1,0 +1,8 @@
+// expect: error: `count` isn't a `var` field, so it can't change: declare it `var count` if it does
+record Tally {
+	count: Int
+
+	mut fn add(n: Int) {
+		this.count += n
+	}
+}

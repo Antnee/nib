@@ -1,0 +1,10 @@
+// expect: error: nothing here says what `T` is: write it on the call, as `decode<…>(…)`, or give the result a type
+fn decode<T>(text: String) -> T {
+	return panic("not shown")
+}
+
+fn run(text: String) {
+	let written = decode<Int>(text)
+	let annotated: Int = decode(text)
+	let value = decode(text)
+}

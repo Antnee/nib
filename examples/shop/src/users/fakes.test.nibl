@@ -1,0 +1,158 @@
+import std.crypto.{TokenHash}
+import std.crypto.passwords with {PasswordHash}
+import std.testing with {RecordingOutbox}
+import std.time.{Instant}
+import shop.core.{RepositoryError, UnitOfWork}
+
+// In-memory stand-ins for tests. They're in a test file, so production code can't use them.
+
+/// Both the unit of work and the work it starts: `begin` returns itself. Changes apply
+/// immediately and `rollback` doesn't undo them, so tests check `commits` instead.
+class InMemoryAccountsWork implements AccountsWork, UnitOfWork<AccountsWork> {
+	override users: InMemoryUserRepository
+	override tokens: InMemoryTokenRepository
+	override outbox: RecordingOutbox<EmailJob>
+	var commits: Int = 0
+
+	construct() {
+		this.users = new InMemoryUserRepository()
+		this.tokens = new InMemoryTokenRepository()
+		this.outbox = new RecordingOutbox()
+	}
+
+	override fn begin() -> AccountsWork else RepositoryError {
+		return this
+	}
+
+	override fn commit() else RepositoryError {
+		this.commits++
+	}
+
+	override fn rollback() {}
+}
+
+class InMemoryUserRepository implements UserRepository {
+	var users: Map<UserId, User> = [:]
+	var nextId: Int = 1
+
+	/// Adds a user directly, for tests that start from an existing account.
+	fn insert(
+		email: Email,
+		passwordHash: PasswordHash,
+		named confirmed: Bool,
+		named createdAt: Instant = Instant.EPOCH,
+	) -> User {
+		let user = User(
+			id: UserId(this.nextId),
+			email:,
+			passwordHash:,
+			sessionVersion: 1,
+			confirmedAt: confirmed ? createdAt : null,
+			createdAt:,
+		)
+		this.users.set(user.id, user)
+		this.nextId++
+		return user
+	}
+
+	override fn find(id: UserId) -> User? else RepositoryError {
+		return this.users.get(id)
+	}
+
+	override fn findByEmail(email: Email) -> User? else RepositoryError {
+		return this.users.values.firstMatch(fn(u) => u.email == email)
+	}
+
+	/// The address's own bytes: a test has no keyring to hash with.
+	override fn emailKey(email: Email) -> EmailKey else RepositoryError {
+		return EmailKey(email.toString().toBytes())
+	}
+
+	override fn findByEmailKey(key: EmailKey) -> User? else RepositoryError {
+		return this.users.values.firstMatch(fn(u) => u.email.toString().toBytes() == key)
+	}
+
+	override fn createIfAbsent(
+		email: Email,
+		passwordHash: PasswordHash,
+		named at: Instant,
+	) -> Creation else RepositoryError {
+		let existing = this.users.values.firstMatch(fn(u) => u.email == email)
+		if existing is not null {
+			return Creation.AlreadyRegistered(userId: existing.id)
+		}
+		return Creation.Created(userId: this.insert(email, passwordHash, confirmed: false, createdAt: at).id)
+	}
+
+	override fn saveCredentials(
+		id: UserId,
+		named passwordHash: PasswordHash,
+		named confirmedAt: Instant?,
+	) else RepositoryError {
+		let stored = this.users.get(id) ?? return
+		this.users.set(id, stored with (passwordHash:, confirmedAt:))
+	}
+
+	override fn upgradePasswordHash(
+		id: UserId,
+		named current: PasswordHash,
+		named upgraded: PasswordHash,
+	) -> Bool else RepositoryError {
+		let stored = this.users.get(id) ?? return false
+		if stored.passwordHash != current {
+			return false
+		}
+		this.users.set(id, stored with (passwordHash: upgraded))
+		return true
+	}
+
+	override fn endSessions(id: UserId) else RepositoryError {
+		let stored = this.users.get(id) ?? return
+		this.users.set(id, stored with (sessionVersion: stored.sessionVersion + 1))
+	}
+}
+
+class InMemoryTokenRepository implements TokenRepository {
+	var tokens: List<IssuedToken> = []
+
+	override fn save(token: IssuedToken) else RepositoryError {
+		this.tokens.push(token)
+	}
+
+	override fn findUsable(
+		hash: TokenHash,
+		purpose: TokenPurpose,
+		named now: Instant,
+	) -> IssuedToken? else RepositoryError {
+		return this.tokens.firstMatch(
+			fn(t) => t.hash == hash and t.purpose == purpose and t.usedAt is null and
+				t.expiresAt > now,
+		)
+	}
+
+	override fn markUsed(hash: TokenHash, named at: Instant) else RepositoryError {
+		this.tokens = this.tokens.map(fn(t) => t.hash == hash ? t with (usedAt: at) : t)
+	}
+
+	override fn revokeAll(userId: UserId, purpose: TokenPurpose, named at: Instant) else RepositoryError {
+		this.tokens = this.tokens.map(fn(t) {
+			let revoked = t.userId == userId and t.purpose == purpose and t.usedAt is null
+			return revoked ? t with (usedAt: at) : t
+		})
+	}
+}
+
+/// A confirmed user, for tests in other modules that just need someone to act as.
+fn testUser(id: UserId) -> User {
+	return User(
+		id:,
+		email: Email.parse("user${id}@example.com").orPanic("test email should parse"),
+		passwordHash: passwords.hash(
+			Password.parse("correct horse battery").orPanic("test password should parse"),
+			testing.FAST_PASSWORD_POLICY,
+		),
+		sessionVersion: 1,
+		confirmedAt: Instant.EPOCH,
+		createdAt: Instant.EPOCH,
+	)
+}

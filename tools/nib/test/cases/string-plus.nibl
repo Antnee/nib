@@ -1,0 +1,4 @@
+// expect: error: there is no `+` on text: interpolate
+fn greet(name: String) -> String {
+	return "Hello, " + name
+}

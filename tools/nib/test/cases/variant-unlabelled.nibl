@@ -1,0 +1,10 @@
+// expect: only error: a variant's values are named, like a record's fields: `radius: …`
+enum Shape {
+	Circle(radius: Decimal)
+	Square(side: Decimal)
+}
+
+pub fn main() {
+	let shapes = [Shape.Circle(2), Shape.Square(side: 3)]
+	print(shapes.length.formatted())
+}

@@ -1,0 +1,13 @@
+// expect: error: `Map` needs its `K` to be `Hashable`, and `Point` isn't
+// A record is hashable when all of its fields are, and a `Float` isn't.
+record Cell {
+	row: Int
+	column: Int
+}
+
+record Point {
+	x: Float
+	y: Float
+}
+
+fn run(cells: Map<Cell, String>, points: Map<Point, String>) {}

@@ -1,0 +1,150 @@
+import std.forms.{FormField, FormState}
+import std.html.{Html}
+import std.locale.{Locale}
+import std.money.{Money}
+import shop.orders.{Cart, CartLine, Sku}
+import shop.users.{MINIMUM_PASSWORD_LENGTH}
+
+fn homePage(page: PageContext) -> Html {
+	return layout(page, title: "Welcome", content: html"""
+		<h1>Welcome to the shop</h1>
+		<p>Tea, mugs and very little else.</p>
+		""")
+}
+
+fn messagePage(page: PageContext, named title: String, named message: String) -> Html {
+	return layout(page, title:, content: html"""
+		<h1>${title}</h1>
+		<p>${message}</p>
+		""")
+}
+
+fn signUpPage(page: PageContext, state: FormState) -> Html {
+	let password = field(
+		state,
+		input: SignUpForm.fields.password,
+		label: "Password (at least ${MINIMUM_PASSWORD_LENGTH} characters)",
+		kind: InputKind.Password,
+		invalid: "Use at least ${MINIMUM_PASSWORD_LENGTH} characters.",
+	)
+	let confirm = field(
+		state,
+		input: SignUpForm.fields.confirmPassword,
+		label: "Confirm password",
+		kind: InputKind.Password,
+		invalid: "Type your password again.",
+	)
+	return layout(page, title: "Sign up", content: html"""
+		<h1>Create an account</h1>
+		${form(page, action: url"/sign-up", content: html"""
+			${emailField(state, SignUpForm.fields.email)}
+			${password}
+			${confirm}
+			${button("Create account")}
+			""")}
+		<p>Already have an account? <a href="/sign-in">Sign in</a>.</p>
+		""")
+}
+
+fn signInPage(page: PageContext, state: FormState) -> Html {
+	return layout(page, title: "Sign in", content: html"""
+		<h1>Sign in</h1>
+		${form(page, action: url"/sign-in", content: html"""
+			${emailField(state, SignInForm.fields.email)}
+			${passwordField(state, SignInForm.fields.password)}
+			${button("Sign in")}
+			""")}
+		<p><a href="/forgot-password">Forgotten your password?</a></p>
+		""")
+}
+
+/// Shown from the email link. Confirming takes a button press (a POST), because mail
+/// scanners follow links in emails and would otherwise use up the token.
+fn confirmEmailPage(page: PageContext) -> Html {
+	return layout(page, title: "Confirm your email", content: html"""
+		<h1>Confirm your email address</h1>
+		${form(page, action: url"/confirm", content: html"""
+			${button("Confirm my email")}
+			""")}
+		""")
+}
+
+fn forgotPasswordPage(page: PageContext, state: FormState) -> Html {
+	return layout(page, title: "Reset your password", content: html"""
+		<h1>Reset your password</h1>
+		${form(page, action: url"/forgot-password", content: html"""
+			${emailField(state, EmailForm.fields.email)}
+			${button("Send reset link")}
+			""")}
+		""")
+}
+
+fn resetPasswordPage(page: PageContext, state: FormState) -> Html {
+	let password = field(
+		state,
+		input: ResetPasswordForm.fields.password,
+		label: "New password (at least ${MINIMUM_PASSWORD_LENGTH} characters)",
+		kind: InputKind.Password,
+		invalid: "Use at least ${MINIMUM_PASSWORD_LENGTH} characters.",
+	)
+	let confirm = field(
+		state,
+		input: ResetPasswordForm.fields.confirmPassword,
+		label: "Confirm new password",
+		kind: InputKind.Password,
+		invalid: "Type your password again.",
+	)
+	return layout(page, title: "Choose a new password", content: html"""
+		<h1>Choose a new password</h1>
+		${form(page, action: url"/reset-password", content: html"""
+			${password}
+			${confirm}
+			${button("Save password")}
+			""")}
+		""")
+}
+
+/// `stripeKey` is Stripe's publishable key, which `checkout.js` needs to show the card field.
+fn checkoutPage(page: PageContext, cart: Cart, named stripeKey: String) -> Html {
+	return layout(page, title: "Checkout", content: html"""
+		<h1>Checkout</h1>
+		<table>
+			<thead><tr><th>Item</th><th>Qty</th><th>Price</th></tr></thead>
+			<tbody>${cart.lines.map(fn(line) => lineRow(cart, line, page.locale))}</tbody>
+		</table>
+		<p>Subtotal: ${cart.subtotal().formatted(locale: page.locale)} (shipping and tax are added when you pay)</p>
+		${form(page, action: url"/checkout/${cart.id}", content: html"""
+			<div id="card-element" data-stripe-key="${stripeKey}"></div>
+			<input type="hidden" name="paymentToken" id="payment-token">
+			${button("Pay now")}
+			""")}
+		<script src="https://js.stripe.com/v3/"></script>
+		<script src="/assets/checkout.js"></script>
+		""")
+}
+
+fn lineRow(cart: Cart, line: CartLine, locale: Locale) -> Html {
+	return html"""
+		<tr>
+			<td>${line.name}</td>
+			<td>${line.quantity}</td>
+			<td>${Money(amount: line.total, currency: cart.currency).formatted(locale:)}</td>
+		</tr>
+		"""
+}
+
+fn outOfStockPage(page: PageContext, skus: List<Sku>) -> Html {
+	return layout(page, title: "Out of stock", content: html"""
+		<h1>Some items have sold out</h1>
+		<ul>${skus.map(fn(sku) => html"""<li>${sku}</li>""")}</ul>
+		<p>We haven't charged you. <a href="/">Back to the shop</a></p>
+		""")
+}
+
+fn emailField(state: FormState, input: FormField) -> Html {
+	return field(state, input:, label: "Email", kind: InputKind.Email, invalid: "Enter a valid email address.")
+}
+
+fn passwordField(state: FormState, input: FormField) -> Html {
+	return field(state, input:, label: "Password", kind: InputKind.Password, invalid: "Enter your password.")
+}

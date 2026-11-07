@@ -1,0 +1,9 @@
+// expect: error: `Colour` has no static member `Gren`; did you mean `Green`?
+enum Colour {
+	Red
+	Green
+}
+
+fn f() -> Bool {
+	return Colour.Gren == Colour.Red
+}

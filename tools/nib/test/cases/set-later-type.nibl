@@ -1,0 +1,5 @@
+// expect: error: `let` needs a value, or a type to be set later: `let name = …` or `let name: Type`
+fn describe() -> String {
+	let label
+	return "none"
+}

@@ -1,0 +1,11 @@
+// expect: error: so it isn't narrowed: put it in a `let` first, as `let user = this.user`, then test `user is not null`
+class Session {
+	var user: String? = null
+
+	fn welcome() -> String {
+		if this.user is not null {
+			return "Welcome back, ${this.user.toUpperCase()}"
+		}
+		return "Welcome"
+	}
+}

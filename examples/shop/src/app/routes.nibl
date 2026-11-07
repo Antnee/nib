@@ -1,0 +1,42 @@
+import std.files.{Files}
+import std.http.{Route, Routes}
+import std.queue.{Consumer}
+import shop.users.{EMAILS}
+
+/// The route table, built once in `main` before any request arrives. It sits beside the
+/// container, `Services`, because it's the only other code that names it.
+fn routes(assets: Files) -> Routes<Services> {
+	return Routes(routes: [
+		Route.files("/assets", assets),
+		Route.post("/sign-out", fn(app) => app.auth.signOut),
+		Route.group(requiring: fn(app) => app.identity.user, routes: [
+			Route.get("/orders.csv", fn(app) => app.exports.ordersCsv),
+		]),
+
+		Route.group(requiring: fn(app) => app.pages.context, routes: [
+			Route.get("/", fn(app) => app.site.home),
+			Route.get("/sign-up", fn(app) => app.auth.showSignUp),
+			Route.post("/sign-up", fn(app) => app.auth.signUp),
+			Route.get("/sign-up/check-email", fn(app) => app.auth.showCheckEmail),
+			Route.get("/confirm", fn(app) => app.auth.showConfirmEmail),
+			Route.post("/confirm", fn(app) => app.auth.confirmEmail),
+			Route.get("/sign-in", fn(app) => app.auth.showSignIn),
+			Route.post("/sign-in", fn(app) => app.auth.signIn),
+			Route.get("/forgot-password", fn(app) => app.auth.showForgotPassword),
+			Route.post("/forgot-password", fn(app) => app.auth.requestPasswordReset),
+			Route.get("/reset-password", fn(app) => app.auth.showResetPassword),
+			Route.post("/reset-password", fn(app) => app.auth.resetPassword),
+
+			Route.group(requiring: fn(app) => app.pages.signedIn, routes: [
+				Route.get("/checkout/{cartId}", fn(app) => app.checkout.show),
+				Route.post("/checkout/{cartId}", fn(app) => app.checkout.placeOrder),
+			]),
+		]),
+	])
+}
+
+/// The consumer of the `emails` queue, which picks its handler from the container in the same
+/// way.
+fn emailConsumer(freshServices: fn() -> Services) -> Consumer {
+	return Consumer.of(EMAILS, services: freshServices, handle: fn(app) => app.delivery.deliver)
+}

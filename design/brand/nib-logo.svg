@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">
+	<title>Nib</title>
+	<defs>
+		<!-- Lit from the top left: the bevel is light there and dark at the bottom right. -->
+		<linearGradient id="bevel" gradientUnits="userSpaceOnUse" x1="33.4" y1="0.2" x2="166.6" y2="199.8">
+			<stop offset="0.11" stop-color="#ffffff"/>
+			<stop offset="1" stop-color="#b8b8b8"/>
+		</linearGradient>
+		<clipPath id="tile">
+			<rect x="12" y="12" width="176" height="176" rx="22"/>
+		</clipPath>
+		<filter id="soften" x="-20%" y="-20%" width="140%" height="140%">
+			<feGaussianBlur stdDeviation="4.5"/>
+		</filter>
+		<filter id="shadow" x="-10%" y="-10%" width="120%" height="125%">
+			<feDropShadow dx="0" dy="1" stdDeviation="0.8" flood-color="#000" flood-opacity="0.22"/>
+		</filter>
+		<filter id="recess" x="-20%" y="-20%" width="140%" height="140%">
+			<feGaussianBlur stdDeviation="0.9"/>
+		</filter>
+		<!-- The two triangles: identical, almost on top of each other, the second 6 to the right. -->
+		<path id="left" d="M97 58.5 L141 148 L53 148 Z"/>
+		<path id="right" d="M103 58.5 L147 148 L59 148 Z"/>
+	</defs>
+
+	<!-- The tile: a flat face inside a rounded bevel, with a small shadow beneath. -->
+	<g filter="url(#shadow)">
+		<rect x="12" y="12" width="176" height="176" rx="22" fill="url(#bevel)"/>
+	</g>
+	<g clip-path="url(#tile)">
+		<rect x="18" y="19" width="166" height="165" rx="16" fill="#e9e9e9" filter="url(#soften)"/>
+	</g>
+
+	<!-- The recess the triangles sit in: a shadowed rim, darkest along the top edges. -->
+	<g filter="url(#recess)" fill="#c4c4c4" stroke="#c4c4c4" stroke-width="3" stroke-linejoin="miter" stroke-miterlimit="8" transform="translate(0 -1.2)">
+		<use href="#left"/>
+		<use href="#right"/>
+	</g>
+
+	<!-- The triangles, half-transparent over white, so their overlap mixes. -->
+	<g>
+		<use href="#left" fill="#ffffff"/>
+		<use href="#right" fill="#ffffff"/>
+		<use href="#left" fill="#ff0000" fill-opacity="0.5"/>
+		<use href="#right" fill="#0000ff" fill-opacity="0.5"/>
+	</g>
+</svg>

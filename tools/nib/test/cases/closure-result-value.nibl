@@ -1,0 +1,22 @@
+// expect: error: this is a `Result<Int, QuoteError>`, but the function passed here should return an `Int`: the call can fail, so put `try` in front
+type Sku: String
+
+record Line {
+	sku: Sku
+	quantity: Int
+	isShort: Bool
+}
+
+enum QuoteError implements Error {
+	Unavailable
+
+	override get message: String => "no quote"
+}
+
+fn quote(line: Line) -> Int else QuoteError {
+	return line.quantity
+}
+
+fn run(lines: List<Line>) {
+	let quotes: List<Int> = lines.map(fn(l) => quote(l))
+}

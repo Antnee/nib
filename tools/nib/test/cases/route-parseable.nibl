@@ -1,0 +1,20 @@
+// expect: error: `moment` is a `Moment`, which doesn't implement `Parseable`, so it can't be read from the path
+import std.http.{@path, Request, Response, Route, Routes}
+
+record Moment {
+	at: Int
+}
+
+class Pages {
+	fn day(req: Request, @path moment: Moment) -> Response {
+		return Response.notFound()
+	}
+}
+
+class Services {
+	pages: Pages
+}
+
+fn routes() -> Routes<Services> {
+	return Routes(routes: [Route.get("/days/{moment}", fn(app) => app.pages.day)])
+}

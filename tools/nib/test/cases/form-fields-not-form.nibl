@@ -1,0 +1,9 @@
+// expect: only error: `Point` has no static member `fields`
+// Only a `@form` record has a `fields` schema.
+record Point {
+	x: Int
+}
+
+fn first() -> String {
+	return "${Point.fields}"
+}

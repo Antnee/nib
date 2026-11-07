@@ -1,0 +1,9 @@
+// expect: error: a `Point` has no `+`: arithmetic operators are for numbers only, so use a method, such as `plus`
+record Point {
+	x: Int
+	y: Int
+}
+
+fn move(a: Point, b: Point) -> Point {
+	return a + b
+}

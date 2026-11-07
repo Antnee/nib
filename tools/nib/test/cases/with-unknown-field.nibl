@@ -1,0 +1,9 @@
+// expect: error: `Point` has no field `w`
+record Point {
+	x: Int
+	y: Int
+}
+
+fn moved(p: Point) -> Point {
+	return p with (w: 1)
+}

@@ -1,0 +1,9 @@
+// expect: error: this `match` gives a value, so an arm can't set a variable: each arm is a value, or leaves with `return` or `fail`
+fn describe(flag: Bool) -> String {
+	var other = ""
+	let label = match flag {
+		true => other = "yes"
+		false => "no"
+	}
+	return label
+}

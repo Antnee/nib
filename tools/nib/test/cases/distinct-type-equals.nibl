@@ -1,0 +1,2 @@
+// expect: only error: a distinct type is a new type backed by its base, written with `:`, as in `type UserId: …`
+type UserId = Int

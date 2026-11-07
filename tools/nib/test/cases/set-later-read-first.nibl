@@ -1,0 +1,7 @@
+// expect: error: `label` is read before it's set
+fn describe() -> String {
+	let label: String
+	print(label)
+	label = "yes"
+	return label
+}

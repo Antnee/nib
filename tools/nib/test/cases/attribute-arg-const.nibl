@@ -1,0 +1,13 @@
+// expect: ok
+record Limit {
+	times: Int
+}
+
+const TWICE = Limit(times: 2)
+
+attribute retry {
+	limit: Limit? = null
+}
+
+@retry(limit: TWICE)
+fn send() {}

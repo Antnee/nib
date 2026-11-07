@@ -1,0 +1,5 @@
+// expect: ok
+fn widen(small: UInt8) -> UInt? {
+	let big: UInt = 18446744073709551615
+	return small.toInt().toUInt() ?? big
+}

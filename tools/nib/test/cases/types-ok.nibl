@@ -1,0 +1,84 @@
+// expect: ok
+// Valid code that leans on what the type stage infers.
+
+type Email: String
+
+enum Currency: String {
+	Gbp = "GBP"
+	Eur = "EUR"
+}
+
+enum LoadError implements Error {
+	Missing(path: String)
+	Unreadable(from ParseError)
+
+	override get message: String => match this {
+		LoadError.Missing(path:) => "no file at ${path.trim()}"
+		LoadError.Unreadable => "couldn't read the file"
+	}
+}
+
+interface Shape {
+	get area: Decimal
+
+	get isLarge: Bool => this.area > 100
+}
+
+record Square implements Shape {
+	side: Decimal
+	label: String = "square"
+
+	override get area: Decimal => this.side * this.side
+}
+
+record Page<T> {
+	items: List<T>
+
+	get first: T? => this.items.first
+}
+
+fn load(path: String) -> Int else LoadError {
+	if path.isEmpty {
+		fail LoadError.Missing(path: path)
+	}
+	let n = try Int.parse(path)
+	return n
+}
+
+fn describe(square: Square, named verbose: Bool = false) -> String {
+	return verbose ? "${square.label}: ${square.area}" : square.label
+}
+
+pub fn main() {
+	let email = Email("a@example.com")
+	print(email.trim().toLowerCase())
+	print(Currency.Gbp.value.length.formatted())
+	let square = Square(side: 2.0)
+	print(describe(square))
+	print(describe(square, verbose: true))
+	print(square.isLarge ? "large" : "small")
+	let page = Page<Square>(items: [square])
+	print(page.first?.label ?? "none")
+	let counts = ["a": 1, "b": 2]
+	for (key, count) in counts {
+		print("${key.trim()} ${count.formatted()}")
+	}
+	let result = load("x")
+	if result is Result.Ok(value) {
+		print(value.formatted())
+	}
+	let n = load("y") catch error {
+		print(error.message)
+		print(error.chain().length.formatted())
+		return
+	}
+	print(n.formatted())
+	let doubled = page.items.map(fn(s) => s.side)
+	print(doubled.length.formatted())
+	let shape = new Shape {
+		override get area: Decimal => 1.0
+	}
+	print(shape.isLarge.toString())
+	assert(n > 0)
+	assert(n > 0, "positive")
+}

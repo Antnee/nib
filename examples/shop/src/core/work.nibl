@@ -1,0 +1,14 @@
+/// Starts one atomic piece of work. Each domain module declares what its work can touch
+/// (`users.AccountsWork`, `orders.OrdersWork`), and a storage adapter decides how that is made
+/// atomic: one database transaction today, a transaction plus an outbox relay tomorrow. The
+/// domain never sees a `Tx` or a `Db`.
+///
+/// The usual shape:
+///
+///     let work = try this.work.begin()
+///     defer work.rollback()          // a no-op once committed
+///     // …
+///     try work.commit()
+interface UnitOfWork<W> {
+	fn begin() -> W else RepositoryError
+}

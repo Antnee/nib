@@ -1,0 +1,149 @@
+import std.crypto
+import std.db.{@db, Db, DbError}
+import std.http.{HttpClient, HttpError, Status, Url}
+import std.json with {@json}
+import std.log
+import std.queue.{Ack, QueueAddress}
+import std.time.{Clock, Instant}
+
+type SubscriptionId: Int
+
+/// Subscribers use it to recognise an event they've already had.
+type EventId: String
+
+/// Something that happened, as subscribers receive it.
+@json
+record Event {
+	id: EventId
+	type: String
+	occurredAt: Instant
+	data: Map<String, String>
+}
+
+/// One event for one subscription. The job names the subscription rather than carrying its
+/// endpoint, so an endpoint changed after the event was queued is still respected.
+@json
+record WebhookJob {
+	subscriptionId: SubscriptionId
+	event: Event
+}
+
+const WEBHOOKS = QueueAddress<WebhookJob>("webhooks")
+
+@db(table: "subscriptions")
+record Subscription {
+	id: SubscriptionId
+	endpoint: Url
+	active: Bool
+}
+
+interface Subscriptions {
+	fn find(id: SubscriptionId) -> Subscription? else DbError
+}
+
+class SqlSubscriptions implements Subscriptions {
+	construct(private db: Db) {}
+
+	override fn find(id: SubscriptionId) -> Subscription? else DbError {
+		return try this.db.queryOne<Subscription>(sql"select id, endpoint, active from subscriptions where id = ${id}")
+	}
+}
+
+/// Sends a request and gives back the status of the answer, whatever it is.
+interface Transport {
+	fn send(endpoint: Url, body: Bytes, named headers: Map<String, String>) -> Status else HttpError
+}
+
+class HttpTransport implements Transport {
+	construct(private http: HttpClient) {}
+
+	// The client refuses private and loopback addresses, so a subscriber can't point a
+	// webhook at something inside our own network.
+	override fn send(endpoint: Url, body: Bytes, named headers: Map<String, String>) -> Status else HttpError {
+		let response = this.http.post(endpoint, bytes: body, headers:) catch err {
+			// Any answer is an answer here: the caller decides what each status means.
+			return match err {
+				HttpError.UnexpectedStatus(response: rejected) => rejected.status
+				_ => fail err
+			}
+		}
+		return response.status
+	}
+}
+
+/// Posts an event to its subscriber. A failure here leaves the job on the queue, which tries
+/// it again with backoff, and sets it aside if it keeps failing.
+class WebhookDelivery {
+	construct(
+		named private subscriptions: Subscriptions,
+		named private transport: Transport,
+		named private clock: Clock,
+		named private signingKey: Secret,
+	) {}
+
+	/// Delivery is at least once, so subscribers can see an event twice. Each request carries
+	/// the event's ID, for them to recognise a repeat.
+	fn deliver(job: WebhookJob) -> Ack else DeliveryError {
+		// Removed after the event was queued: there's nobody to tell.
+		let subscription = try this.subscriptions.find(job.subscriptionId) ?? return Ack.DONE
+		if not subscription.active {
+			return Ack.DONE
+		}
+
+		let body = json.encode(job.event)
+		let status = try this.transport.send(subscription.endpoint, body, headers: [
+			"Content-Type": "application/json",
+			"Webhook-Id": job.event.id,
+			"Webhook-Signature": this.signature(body),
+		])
+		match outcome(status) {
+			Outcome.Delivered => return Ack.DONE
+			Outcome.Refused => {
+				// Trying again won't change a refusal, so the event is dropped, and the log says
+				// so for the subscriber's sake.
+				log.warn("webhook refused", fields: [
+					"subscription": subscription.id,
+					"event": job.event.id,
+					"status": status,
+				])
+				return Ack.DONE
+			}
+			Outcome.Busy => fail DeliveryError.Unavailable(status:)
+		}
+	}
+
+	/// `t=<time>,v1=<signature>`: an HMAC of the time and the body, so a subscriber can check
+	/// that we sent it, and refuse an old request replayed later.
+	private fn signature(body: Bytes) -> String {
+		let sentAt = this.clock.now()
+		let signed = crypto.hmacSha256(key: this.signingKey, message: Bytes.concat(["${sentAt}.".toBytes(), body]))
+		return "t=${sentAt},v1=${signed.hex}"
+	}
+}
+
+enum Outcome {
+	Delivered
+	Refused
+	Busy
+}
+
+/// What a subscriber's answer means for the event.
+fn outcome(status: Status) -> Outcome {
+	return match status {
+		s if s.isSuccess => Outcome.Delivered
+		s if s == Status.REQUEST_TIMEOUT or s == Status.TOO_MANY_REQUESTS or s >= 500 => Outcome.Busy
+		_ => Outcome.Refused
+	}
+}
+
+enum DeliveryError implements Error {
+	Storage(from DbError)
+	Http(from HttpError)
+	Unavailable(status: Status)
+
+	override get message: String => match this {
+		DeliveryError.Storage => "couldn't look up the subscription"
+		DeliveryError.Http => "couldn't reach the subscriber's endpoint"
+		DeliveryError.Unavailable(status:) => "the subscriber's endpoint is busy (status ${status})"
+	}
+}

@@ -1,0 +1,39 @@
+// expect: ok
+// Reserved words can name members, because a member name always follows `.`, `fn` or
+// `get`, or comes before `:`.
+
+attribute retired {
+	since: String
+	use: String?
+}
+
+record Range {
+	from: Int
+	to: Int
+	in: Bool
+
+	get match: Bool => this.in
+
+	fn new() -> Range {
+		return Range(from: 0, to: 0, in: true)
+	}
+}
+
+enum Change {
+	Moved(from: Int, to: Int)
+}
+
+fn describe(r: Range, c: Change) -> String {
+	let copy = r.new()
+	let label = match c {
+		Change.Moved(from: 0, to: t) => "from the start to ${t}"
+		Change.Moved => "moved"
+	}
+	let ends = [copy].map(fn(m) => m.to)
+	return copy.match ? label : "${ends.length}"
+}
+
+@retired(since: "1.0", use: "describe")
+fn oldDescribe(r: Range) -> Int {
+	return r.from
+}

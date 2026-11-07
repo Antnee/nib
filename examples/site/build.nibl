@@ -1,0 +1,205 @@
+#!/usr/bin/env nib
+
+// Builds a small static blog. Each post in `content` is a text file:
+//
+//   title: Opening the shop
+//   date: 2026-09-15
+//
+//   The first paragraph, which can run over
+//   several lines.
+//
+//   # A heading
+//   Another paragraph.
+//
+// Each post becomes a page in `public`, next to an index of every post, newest first. Both
+// directories are granted on the command line:
+//
+//   nib run --dir content=./posts --dir public=./out examples/site/build.nibl
+
+import std.app.{Env}
+import std.files.{Dir, DirEntry, FileError, PathSegment}
+import std.html.{Html}
+import std.io with {IoError}
+import std.locale.{Locale}
+import std.time.{Date, DateStyle}
+
+pub fn main(env: Env) -> Int else IoError {
+	build(env) catch err {
+		let problem = match err {
+			BuildError.Files or BuildError.Io => "A file couldn't be read or written."
+			BuildError.BadName(name:) => "${name} can't be a page name. Use letters, digits and dashes."
+			BuildError.SameName(name:) =>
+				"Two posts are called ${name}. Rename one: every page goes in the same directory."
+			BuildError.MissingField(post:, field:) => "${post} has no ${field}: line."
+			BuildError.BadDate(post:, written:) =>
+				"${post} has the date ${written}, which isn't a date like 2026-09-15."
+		}
+		try env.stderr.writeLine(problem)
+		return 1
+	}
+	return 0
+}
+
+fn build(env: Env) else BuildError {
+	let content = try env.dir("content")
+	let public = try env.dir("public")
+
+	// Every page goes straight into `public`, so two posts with the same file name in
+	// different directories would overwrite each other's page.
+	var posts: List<Post> = []
+	var slugs: Set<PathSegment> = []
+	for entry in try content.walk() {
+		if entry.isDirectory or not entry.path.name.endsWith(".txt") {
+			continue
+		}
+		let post = try read(content, entry)
+		if slugs.contains(post.slug) {
+			fail BuildError.SameName(name: entry.path.name)
+		}
+		slugs.add(post.slug)
+		posts.push(post)
+	}
+	let newestFirst = posts.sortedBy(fn(post) => post.date, descending: true)
+
+	// The blog is written in British English, so its dates are written the British way.
+	let locale = Locale.parse("en-GB").orPanic("en-GB is a language tag")
+	for post in newestFirst {
+		try public.write(path"${post.slug}.html", layout(post.title, postPage(post, locale), locale).render().toBytes())
+	}
+	try public.write(path"index.html", layout("Blog", indexPage(newestFirst, locale), locale).render().toBytes())
+	print("Built ${posts.length} posts.")
+}
+
+record Post {
+	slug: PathSegment
+	title: String
+	date: Date
+	blocks: List<Block>
+}
+
+enum Block {
+	Heading(text: String)
+	Paragraph(text: String)
+}
+
+/// Reads a post: the `key: value` lines up to the first blank line, then its blocks.
+fn read(content: Dir, entry: DirEntry) -> Post else BuildError {
+	let name = entry.path.name
+	let slug = PathSegment.parse(name.slice(from: 0, until: name.length - ".txt".length)) catch _ {
+		fail BuildError.BadName(name:)
+	}
+
+	var fields: Map<String, String> = [:]
+	var body: List<String> = []
+	var inHeader = true
+	// The host would close it when the build ends. This runs once per post, so close each
+	// one as soon as it's read.
+	let file = try content.open(entry.path)
+	defer file.close()
+	for line in try io.lines(file) {
+		if inHeader and line.trim().isEmpty {
+			inHeader = false
+		} else if inHeader {
+			let parts = line.split(":", limit: 2)
+			if parts.length == 2 {
+				fields.set(parts[0].trim(), parts[1].trim())
+			}
+		} else {
+			body.push(line)
+		}
+	}
+
+	let title = fields.get("title") ?? fail BuildError.MissingField(post: name, field: "title")
+	let dateText = fields.get("date") ?? fail BuildError.MissingField(post: name, field: "date")
+	let date = Date.parse(dateText) catch _ {
+		fail BuildError.BadDate(post: name, written: dateText)
+	}
+	return Post(slug:, title:, date:, blocks: parseBlocks(body).toList())
+}
+
+/// Groups lines into blocks. A blank line ends a block, and a line starting `# ` is a heading
+/// of its own.
+fn parseBlocks(lines: List<String>) -> Iterable<Block> {
+	var paragraph: List<String> = []
+	for line in lines {
+		let trimmed = line.trim()
+		if trimmed.startsWith("# ") or trimmed.isEmpty {
+			if paragraph.isNotEmpty {
+				yield Block.Paragraph(text: paragraph.join(" "))
+				paragraph = []
+			}
+			if trimmed.startsWith("# ") {
+				yield Block.Heading(text: trimmed.slice(from: 2, until: trimmed.length))
+			}
+		} else {
+			paragraph.push(trimmed)
+		}
+	}
+	if paragraph.isNotEmpty {
+		yield Block.Paragraph(text: paragraph.join(" "))
+	}
+}
+
+// Pages. Every value is escaped for where it lands, so a post's text can't add markup of
+// its own.
+
+fn layout(title: String, content: Html, locale: Locale) -> Html {
+	return html"""
+		<!doctype html>
+		<html lang="${locale}">
+			<head>
+				<meta charset="utf-8">
+				<title>${title}</title>
+			</head>
+			<body>
+				<main>${content}</main>
+			</body>
+		</html>
+		"""
+}
+
+fn postPage(post: Post, locale: Locale) -> Html {
+	let blocks = post.blocks.map(fn(block) => match block {
+		Block.Heading(text:) => html"<h2>${text}</h2>"
+		Block.Paragraph(text:) => html"<p>${text}</p>"
+	})
+	return html"""
+		<article>
+			<h1>${post.title}</h1>
+			<p><time datetime="${post.date}">${post.date.formatted(DateStyle.Long, locale:)}</time></p>
+			${blocks}
+		</article>
+		<p><a href="index.html">All posts</a></p>
+		"""
+}
+
+fn indexPage(posts: List<Post>, locale: Locale) -> Html {
+	let items = posts.map(fn(post) => html"""
+		<li>
+			<a href="${post.slug}.html">${post.title}</a>
+			<time datetime="${post.date}">${post.date.formatted(DateStyle.Medium, locale:)}</time>
+		</li>
+		""")
+	return html"""
+		<h1>Blog</h1>
+		<ul>${items}</ul>
+		"""
+}
+
+enum BuildError implements Error {
+	Files(from FileError)
+	Io(from IoError)
+	BadName(name: String)
+	SameName(name: String)
+	MissingField(post: String, field: String)
+	BadDate(post: String, written: String)
+
+	override get message: String => match this {
+		BuildError.Files => "couldn't read or write a file"
+		BuildError.Io => "couldn't read a post"
+		BuildError.BadName(name:) => "not a safe page name: ${name}"
+		BuildError.SameName(name:) => "two posts are called ${name}"
+		BuildError.MissingField(post:, field:) => "${post} has no ${field}"
+		BuildError.BadDate(post:, written:) => "${post} has a bad date: ${written}"
+	}
+}

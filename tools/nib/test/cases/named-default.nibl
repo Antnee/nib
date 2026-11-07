@@ -1,0 +1,8 @@
+// expect: ok
+fn greet(name: String, named greeting: String = "Hello") -> String {
+	return "${greeting}, ${name}"
+}
+
+fn f() -> String {
+	return "${greet("you")}${greet("you", greeting: "Hi")}"
+}

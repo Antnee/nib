@@ -1,0 +1,15 @@
+// expect: ok
+// A distinct type that implements `Numeric` is a number: `+` and `-` with one of its own, or a
+// literal, keep it, and anything else gives its base.
+type Cents: Int implements Numeric
+
+fn run(price: Cents, other: Cents, count: Int, scale: Int32) -> Int {
+	let doubled: Int32 = scale * 2
+	let more: Cents = price + 1
+	let total: Cents = price + other
+	let less: Cents = total - more
+	let scaled: Int = price * 2
+	let mixed: Int = price + count
+	let all: Cents = [price, other].sum()
+	return less + scaled + mixed + all
+}

@@ -1,0 +1,8 @@
+// expect: warning: two `Int` parameters side by side are easy to swap at a call: make them `named`, so calls say `width: …, height: …`
+fn area(width: Int, height: Int) -> Int {
+	return width * height
+}
+
+pub fn main() {
+	print(area(800, 600).formatted())
+}

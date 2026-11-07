@@ -1,0 +1,4 @@
+// expect: error: `f` yields, so it's a generator, and returns an `Iterable<T>`
+fn f() -> Int {
+	yield 1
+}

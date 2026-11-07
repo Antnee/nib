@@ -1,0 +1,4 @@
+// expect: error: a constructor is declared as `construct(…) { … }`, without `static fn` or a return type
+class Greeter {
+	static fn construct(private greeting: String) -> Greeter
+}

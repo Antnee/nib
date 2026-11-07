@@ -1,0 +1,8 @@
+// expect: error: `place` fails with an `OrderError`, which doesn't implement `Error`: every error type does, so it has a `message` for logs and a chain of causes; add `implements Error` to `OrderError`, with a `message`
+enum OrderError {
+	Missing
+}
+
+fn place() -> Int else OrderError {
+	fail OrderError.Missing
+}

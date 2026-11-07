@@ -1,0 +1,5 @@
+// expect: error: `push` changes `names`, which is declared with `let`: copy it to a `var` first
+fn add() {
+	let names = ["ann"]
+	names.push("bob")
+}

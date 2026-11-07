@@ -1,0 +1,9 @@
+// expect: only error: `this.name` is read before the constructor sets it
+class Greeter {
+	construct(private greeting: String) {
+		let first = this.name
+		this.name = first
+	}
+
+	private name: String
+}

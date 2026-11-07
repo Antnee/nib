@@ -1,0 +1,86 @@
+// expect: ok
+// A local or parameter is its non-null type once it has been tested.
+enum LoadError implements Error {
+	Missing
+	Broken
+
+	override get message: String => "load failed"
+}
+
+fn load(path: String) -> String else LoadError {
+	return path.isEmpty ? fail LoadError.Missing : path
+}
+
+record Node {
+	label: String
+	next: Node?
+}
+
+fn length(name: String?) -> Int {
+	if name is not null {
+		return name.length
+	}
+	return 0
+}
+
+fn early(name: String?) -> Int {
+	if name is null {
+		return 0
+	}
+	return name.length
+}
+
+fn both(a: String?, b: String?) -> Bool {
+	return a is not null and b is not null and a.length == b.length
+}
+
+fn either(name: String?) -> Int {
+	if name is null or name.isEmpty {
+		return 0
+	}
+	return name.length
+}
+
+fn pick(name: String?) -> String {
+	return name is not null ? name.trim() : ""
+}
+
+fn collect(first: Node) -> List<String> {
+	var labels: List<String> = []
+	var next: Node? = first
+	while next is not null {
+		labels.push(next.label)
+		next = next.next
+	}
+	return labels
+}
+
+fn assigned() -> Int {
+	var name: String? = null
+	name = "set"
+	return name.length
+}
+
+fn kinds(flag: Bool, error: LoadError?) -> String {
+	let word = match flag {
+		true => "yes"
+		false => "no"
+	}
+	let label = match error {
+		null => "none"
+		LoadError.Missing => "missing"
+		LoadError.Broken => "broken"
+	}
+	return "${word}${label}"
+}
+
+fn passOn(path: String) -> String else LoadError {
+	let text = try load(path)
+	let _ = load(path) catch err {
+		let ignored = err
+	}
+	let fallback = load(path) catch err {
+		fail err
+	}
+	return "${text}${fallback}"
+}

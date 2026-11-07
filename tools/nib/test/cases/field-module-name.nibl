@@ -1,0 +1,10 @@
+// expect: ok
+import std.crypto.passwords
+
+record Config {
+	passwords: passwords.Policy
+}
+
+fn strict() -> Config {
+	return Config(passwords: passwords.Policy.RECOMMENDED)
+}

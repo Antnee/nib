@@ -1,0 +1,9 @@
+# expect: error: there's no cache called `sessions` in nib.toml
+[package]
+name = "demo"
+
+[config]
+REDIS_URL = { secret = true }
+
+[caches.main]
+from = "REDIS_URL"

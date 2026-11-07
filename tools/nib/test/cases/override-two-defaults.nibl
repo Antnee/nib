@@ -1,0 +1,12 @@
+// expect: error: gets a default `label` from both `Named` and `Titled`
+interface Named {
+	get label: String => "named"
+}
+
+interface Titled {
+	get label: String => "titled"
+}
+
+record Book implements Named, Titled {
+	title: String
+}

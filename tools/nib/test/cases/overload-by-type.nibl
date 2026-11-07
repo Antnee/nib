@@ -1,0 +1,12 @@
+// expect: error: has the same parameters as the one on line 2, so only their types differ
+fn describe(value: Int) -> String {
+	return "an integer"
+}
+
+fn describe(value: String) -> String {
+	return value
+}
+
+fn describe(value: Int, named unit: String) -> String {
+	return "${value} ${unit}"
+}

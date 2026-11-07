@@ -1,0 +1,4 @@
+// expect: error: `expectPanic` can only be used in test files
+fn check() {
+	expectPanic(fn() => panic("no"))
+}

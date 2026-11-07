@@ -1,0 +1,4 @@
+// expect: error: `isEmpty` is a getter, so it's read without brackets: `names.isEmpty`
+fn run(names: List<String>) -> Bool {
+	return names.isEmpty()
+}

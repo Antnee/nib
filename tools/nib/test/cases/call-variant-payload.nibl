@@ -1,0 +1,9 @@
+// expect: error: `LoadError.Missing` needs `path`, which this call leaves out
+enum LoadError {
+	Missing(path: String)
+	Empty
+}
+
+fn missing() -> LoadError {
+	return LoadError.Missing()
+}

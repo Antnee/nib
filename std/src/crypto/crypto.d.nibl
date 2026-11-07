@@ -1,0 +1,119 @@
+import std.codec.{Codable, DbCodec, SessionCodec}
+
+// Vetted choices with safe defaults. There are no raw primitives here.
+
+// ---------------------------------------------------------------------------------------
+// Encryption at rest
+
+/// Keys for encrypting data at rest, each with an ID so keys can be rotated. Encryption
+/// uses the newest key; every ciphertext names the key and algorithm it used, so data
+/// written with an older key still decrypts.
+///
+/// Parse one from a secret in `main`, so a bad key stops the app at startup rather than
+/// failing mid-request:
+///
+/// ```
+/// let pii = try Keyring.parse(try env.secret("PII_KEYS"))
+/// ```
+pub class Keyring {
+	/// Reads a keyring from its secret form.
+	static fn parse(secret: Sensitive) -> Keyring else KeyringError
+
+	/// Encrypts `plaintext` with the newest key (XChaCha20-Poly1305 unless the key says
+	/// AES-256-GCM).
+	fn encrypt(plaintext: String) -> Bytes
+
+	/// Decrypts what `encrypt` produced, with whichever key it names.
+	fn decrypt(ciphertext: Bytes) -> String else DecryptError
+
+	/// A keyed hash of `value` for `index`, so an encrypted column can still be searched for
+	/// an exact value. Equal values give equal hashes; the hash reveals nothing about the
+	/// value without the key.
+	fn blindIndex(index: BlindIndex, value: String) -> Bytes
+}
+
+/// A blind index: a column of keyed hashes that lets an encrypted column be searched for an
+/// exact value. Declare each one once, as a constant, and use it both in `@db(blindIndex:)`
+/// and in `Db.blindIndex`, so the codec and hand-written SQL compute the same hash.
+///
+/// ```
+/// const EMAIL_INDEX = BlindIndex(name: "users.email", column: "email_idx", keyring: "pii")
+/// ```
+pub record BlindIndex {
+	/// Part of every hash, so changing it changes every hash already stored: lookups stop
+	/// matching and unique constraints stop catching duplicates. Never change it.
+	name: String
+
+	/// The column the hashes are stored in. It can be renamed in a migration, because the
+	/// hashes don't depend on it.
+	column: String
+
+	/// The keyring, attached with `Db.withKeyring`, whose key makes the hashes. It can be the
+	/// one the field is encrypted with, or one of its own.
+	keyring: String
+}
+
+/// Why a keyring's secret couldn't be read.
+pub enum KeyringError implements Error {
+	/// The secret holds no keys.
+	Empty
+
+	/// The secret isn't in the keyring format.
+	Malformed(reason: String)
+
+	override get message: String
+}
+
+/// Why a ciphertext couldn't be decrypted.
+pub enum DecryptError implements Error {
+	/// It names a key that isn't in the keyring.
+	UnknownKey(id: String)
+
+	/// It was changed, truncated, or isn't a ciphertext at all.
+	Tampered
+
+	override get message: String
+}
+
+// ---------------------------------------------------------------------------------------
+// Tokens
+
+/// Random values that can't be guessed, from the operating system's secure generator. Ask
+/// for one instead of creating it, so tests can use a predictable one
+/// (`FakeSecureRandom` in `std.testing`).
+pub interface SecureRandom {
+	/// A new token made of `bytes` random bytes.
+	///
+	/// ```
+	/// let token = random.token(bytes: 32)
+	/// ```
+	fn token(named bytes: Int) -> Token
+}
+
+/// A random token for a link or an API key. Send it to its owner and store only `hash`. One
+/// that comes back, in a link or a form, is read with `parse`, so it stays out of logs too.
+@sensitive
+pub record Token implements Parseable {
+	/// Reads a token received as text. Fails if it isn't URL-safe text of a token's length.
+	override static fn parse(text: String) -> Token else ParseError
+
+	/// The token as URL-safe text, for the link or message that sends it to its owner.
+	override get revealed: String
+
+	/// The hash to store, and to look a received token up by.
+	get hash: TokenHash
+}
+
+/// The hash of a token, which is safe to store: the token can't be recovered from it.
+/// Comparing two with `==` takes the same time wherever they differ. It is stored in the
+/// database as bytes and can be kept in a session, but it is never JSON or form data.
+pub record TokenHash implements Codable<DbCodec>, Codable<SessionCodec> {}
+
+/// An HMAC-SHA256 of `message` under `key`: a signature that only a holder of the key can
+/// make or check, such as a webhook's. Compare a received one with `==`, which takes the same
+/// time wherever two `Bytes` differ.
+///
+/// ```
+/// let signature = crypto.hmacSha256(key: config.signingKey, message: body).hex
+/// ```
+pub fn hmacSha256(named key: Sensitive, named message: Bytes) -> Bytes

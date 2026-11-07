@@ -1,0 +1,16 @@
+// expect: warning: the variant `Payment` has the name of the type `Payment`, so a pattern such as `Payment(…)` reads as either
+record Payment {
+	id: Int
+}
+
+enum PaymentError implements Error {
+	Declined
+
+	override get message: String => "declined"
+}
+
+enum CheckoutError implements Error {
+	Payment(from PaymentError)
+
+	override get message: String => "payment failed"
+}

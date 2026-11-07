@@ -1,0 +1,7 @@
+// expect: only error: `FormField`'s constructor is private, so only its own code can build one
+// A form's field comes from its schema, never from a string.
+import std.forms.{FormField}
+
+fn emailField() -> FormField {
+	return new FormField("SignInForm", "email")
+}

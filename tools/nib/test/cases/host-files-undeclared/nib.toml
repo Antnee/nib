@@ -1,0 +1,3 @@
+# expect: error: there's no set of files called `assets` in nib.toml: declare it in [files]
+[package]
+name = "demo"

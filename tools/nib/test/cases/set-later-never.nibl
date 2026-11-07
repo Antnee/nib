@@ -1,0 +1,5 @@
+// expect: error: `label` is declared without a value, and nothing sets it
+fn describe() -> String {
+	let label: String
+	return "none"
+}

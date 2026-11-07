@@ -1,0 +1,10 @@
+// expect: error: a closure can only read the `count` it captures: write `use (mut count)` after the parameters to change it
+fn run(items: List<Int>) -> Int {
+	var count = 0
+	each(items, fn(n) {
+		count += n
+	})
+	return count
+}
+
+fn each(items: List<Int>, f: fn(Int) -> Void) {}

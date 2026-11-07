@@ -1,0 +1,7 @@
+// expect: error: a `Password` is a secret, so it can't go in a plain string: build a `Secret` with `secret"…"`
+@sensitive
+type Password: private String
+
+fn leak(password: Password) -> String {
+	return "password: ${password}"
+}

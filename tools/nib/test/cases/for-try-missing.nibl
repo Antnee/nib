@@ -1,0 +1,15 @@
+// expect: error: this can fail partway through, with a `ParseError`: write `for … in try …` to pass the error on
+fn lines() -> Iterable<String, ParseError> {
+	return panic("not shown")
+}
+
+fn run() -> Int else ParseError {
+	var count = 0
+	for line in lines() {
+		count += 1
+	}
+	for line in try lines() {
+		count += 1
+	}
+	return count
+}

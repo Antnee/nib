@@ -1,0 +1,98 @@
+import std.codec.{Case}
+import std.crypto.{BlindIndex}
+import std.crypto.passwords.{PasswordHash}
+import std.db.{@db}
+import std.time.{Instant}
+
+type UserId: Int
+
+/// Users' email addresses, encrypted with the `pii` keyring and still searchable. The name is
+/// part of every stored hash, so it never changes; the column can be renamed.
+const EMAIL_INDEX = BlindIndex(name: "users.email", column: "email_idx", keyring: "pii")
+
+/// An address's blind index: a keyed hash that finds its account but can't be turned back
+/// into the address. Jobs and rate limits use it where they'd otherwise hold an address.
+type EmailKey: Bytes implements Stringable {
+	/// The key in hex, as a rate limit counts it.
+	override fn toString() -> String {
+		return this.hex
+	}
+}
+
+/// Someone with an account. The email is encrypted at rest and found through a blind index;
+/// see `storage.SqlUserRepository`.
+@db(table: "users", columns: Case.Snake)
+record User {
+	id: UserId
+
+	@db(encrypt: "pii", blindIndex: EMAIL_INDEX)
+	email: Email
+
+	passwordHash: PasswordHash
+
+	/// Stored in each session at sign-in. Resetting the password increases it, so every
+	/// session signed in before then no longer matches and is signed out.
+	sessionVersion: Int
+
+	confirmedAt: Instant?
+	createdAt: Instant
+
+	get isConfirmed: Bool => this.confirmedAt is not null
+}
+
+/// A normalised email address: trimmed and lower-cased, so one person can't sign up twice
+/// as `Ann@Example.com` and `ann@example.com`. `private String` makes `Email(…)` private to
+/// this type, so `parse` is the only way to make one.
+type Email: private String implements Parseable {
+	override static fn parse(text: String) -> Email else EmailError {
+		let normalised = text.trim().toLowerCase()
+		if normalised.doesNotContain("@") or normalised.byteLength > 254 {
+			fail EmailError.Invalid
+		}
+		return Email(normalised)
+	}
+}
+
+enum EmailError implements Error {
+	Invalid
+
+	override get message: String => "not an email address: no @, or longer than 254 bytes"
+}
+
+/// A password as typed. `@sensitive` keeps it out of logs, panic reports and debug output,
+/// and the form codec never echoes it back into a re-displayed form.
+@sensitive
+type Password: private String implements Parseable {
+	override static fn parse(text: String) -> Password else PasswordError {
+		if text.length < MINIMUM_PASSWORD_LENGTH {
+			fail PasswordError.TooShort(minimum: MINIMUM_PASSWORD_LENGTH)
+		}
+		return Password(text)
+	}
+}
+
+const MINIMUM_PASSWORD_LENGTH = 12
+
+/// A password typed to be checked against another: to sign in, or to confirm a new one.
+/// Unlike `Password`, it isn't held to the length rule. An account imported from the old app
+/// may have a shorter password, and its owner must still be able to sign in; and a
+/// confirmation only has to match.
+@sensitive
+type PasswordAttempt: private String implements Parseable {
+	override static fn parse(text: String) -> PasswordAttempt else PasswordError {
+		if text.isEmpty {
+			fail PasswordError.Empty
+		}
+		return PasswordAttempt(text)
+	}
+}
+
+enum PasswordError implements Error {
+	Empty
+	TooShort(minimum: Int)
+
+	override get message: String => match this {
+		PasswordError.Empty => "no password given"
+		PasswordError.TooShort(minimum:) => "shorter than ${minimum} characters"
+	}
+}

@@ -1,0 +1,11 @@
+// expect: only error: this is a `String`, but `key` needs an `IpAddress`
+// A limit counts one type of key, so another type can't be counted against it.
+import std.cache.{CacheError, Limit, RateLimit, RateLimiter}
+import std.http.{IpAddress}
+import std.time.{Duration}
+
+const SIGN_INS = Limit<IpAddress>(name: "sign-in-ip", max: 5, per: Duration.of(minutes: 1))
+
+fn check(limiter: RateLimiter, email: String) -> RateLimit else CacheError {
+	return try limiter.hit(SIGN_INS, email)
+}

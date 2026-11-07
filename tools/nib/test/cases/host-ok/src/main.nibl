@@ -1,0 +1,22 @@
+import std.app.{App, Env}
+import std.json.{@json}
+import std.queue.{QueueAddress}
+
+@json
+record Job {
+	id: Int
+}
+
+const JOBS = QueueAddress<Job>("jobs")
+const MAIN = "main"
+
+pub fn main(env: Env) -> App else Error {
+	let key = try env.secret("API_KEY")
+	let port = try env.int("PORT")
+	let db = env.db(MAIN)
+	let queue = env.queue(JOBS)
+	let out = try env.dir("out")
+	let cache = env.cache("main")
+	let _ = [key, port, db, queue, out, cache]
+	return App()
+}

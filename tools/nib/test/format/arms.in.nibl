@@ -1,0 +1,12 @@
+// A match arm that doesn't fit breaks after its `=>`; its pattern stays whole.
+fn explain(err: ConvertError) -> String {
+	return match err {
+		ConvertError.Io => "Reading failed."
+		ConvertError.Csv(CsvError.Malformed(line:)) or ConvertError.Csv(CsvError.Field(line:)) => "The CSV isn't valid on line ${line}."
+		ConvertError.Json(JsonError.Malformed(line:, column:)) =>
+			"short"
+		ConvertError.Block => {
+			return "a block keeps its place"
+		}
+	}
+}

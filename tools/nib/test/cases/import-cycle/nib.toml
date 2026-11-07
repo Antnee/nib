@@ -1,0 +1,3 @@
+# expect: warning: this import makes a cycle, `demo.orders` → `demo.users` → `demo.orders`
+[package]
+name = "demo"

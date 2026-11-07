@@ -1,0 +1,8 @@
+// expect: error: this is an `Int`, but the field `name` holds a `String`
+record User {
+	name: String
+}
+
+fn make() -> User {
+	return User(name: 42)
+}

@@ -1,0 +1,4 @@
+// expect: error: `-1` doesn't fit in a `UInt`, which holds 0 to 18446744073709551615
+fn run() {
+	let big: UInt = -1
+}

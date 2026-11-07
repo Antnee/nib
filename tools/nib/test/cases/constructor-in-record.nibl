@@ -1,0 +1,6 @@
+// expect: error: a record is built from its fields, `Point(x: 1, y: 2)`, so it has no constructor
+record Point {
+	x: Int
+
+	construct(x: Int) {}
+}

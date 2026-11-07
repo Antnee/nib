@@ -1,0 +1,24 @@
+// expect: ok
+// What can go in a log: values, IDs, enums, errors, secrets (redacted), and records marked `@loggable`.
+import std.log
+import std.log.{@loggable}
+
+type OrderId: Int
+
+enum Stage {
+	Paid(orderId: OrderId)
+	Shipped
+}
+
+@loggable
+record Totals {
+	lines: Int
+	pence: Int
+}
+
+@sensitive
+type ApiKey: String
+
+fn report(id: OrderId, stage: Stage, totals: Totals, key: ApiKey, note: String?, err: Error) {
+	log.info("order", fields: ["id": id, "stage": stage, "totals": totals, "key": key, "note": note, "error": err])
+}

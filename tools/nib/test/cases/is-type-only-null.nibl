@@ -1,0 +1,7 @@
+// expect: only error: this only tests for `null`: write `is not null`, which narrows a local or a parameter
+fn greet(nickname: String?) -> String {
+	if nickname is String name {
+		return "Hello, ${name}"
+	}
+	return "Hello"
+}

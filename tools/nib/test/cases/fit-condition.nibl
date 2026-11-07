@@ -1,0 +1,6 @@
+// expect: error: this is a `String`, but `if` needs a `Bool`
+fn run(name: String) {
+	if name {
+		return
+	}
+}

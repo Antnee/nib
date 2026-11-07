@@ -1,0 +1,7 @@
+// expect: only error: an empty `html""` is written `Html.EMPTY`
+// No HTML has one spelling.
+import std.html.{Html}
+
+fn notice(message: String?) -> Html {
+	return message is not null ? html"<p>${message}</p>" : html""
+}

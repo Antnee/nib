@@ -1,0 +1,6 @@
+// expect: error: this function takes 2 parameters, but `each` needs one that takes 1
+fn visit(each: fn(Int) -> Void) {}
+
+fn run() {
+	visit(fn(a, b) => a)
+}

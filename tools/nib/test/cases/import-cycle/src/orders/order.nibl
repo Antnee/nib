@@ -1,0 +1,5 @@
+import demo.users.{UserId}
+
+record Order {
+	owner: UserId
+}

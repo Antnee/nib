@@ -1,0 +1,7 @@
+// expect: only error: this is a `String`, but `@retry(times:)` takes an `Int`
+attribute retry {
+	times: Int = 3
+}
+
+@retry(times: "three")
+fn send() {}

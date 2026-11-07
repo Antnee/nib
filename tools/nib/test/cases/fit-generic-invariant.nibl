@@ -1,0 +1,8 @@
+// expect: error: this is a `List<Email>`, but `names` needs a `List<String>`
+type Email: String
+
+fn show(names: List<String>) {}
+
+fn run(emails: List<Email>) {
+	show(emails)
+}

@@ -1,0 +1,15 @@
+// expect: error: this is a `String`, but `run` fails with a `LoadError`
+enum LoadError implements Error {
+	Missing
+	Broken
+
+	override get message: String => "load failed"
+}
+
+fn load(path: String) -> String else LoadError {
+	return path
+}
+
+fn run() -> Int else LoadError {
+	fail "no"
+}

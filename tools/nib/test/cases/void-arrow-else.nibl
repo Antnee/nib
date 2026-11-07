@@ -1,0 +1,11 @@
+// expect: warning: a function that returns nothing leaves out `-> Void`, even when it can fail
+fn check(text: String) -> Void else ParseError {
+	let _ = try Int.parse(text)
+}
+
+// The one spelling: `else` straight after the parameters.
+fn checkAll(texts: List<String>, visit: fn(String) -> Void else ParseError) else ParseError {
+	for text in texts {
+		try visit(text)
+	}
+}

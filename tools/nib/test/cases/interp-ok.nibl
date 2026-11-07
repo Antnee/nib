@@ -1,0 +1,25 @@
+// expect: ok
+// Scalars, backed enums, distinct types over them, `Stringable` types and markup can be interpolated.
+import std.html.{Html}
+
+enum Kind: String {
+	Text = "text"
+}
+
+type UserId: Int
+
+record Tag implements Stringable {
+	name: String
+
+	override fn toString() -> String {
+		return "#${this.name}"
+	}
+}
+
+fn line(id: UserId, kind: Kind, tag: Tag, count: Int, price: Decimal) -> String {
+	return "${id} ${kind} ${tag} ${count} ${price}"
+}
+
+fn list(items: List<Html>, title: Html, name: String?) -> Html {
+	return html"<h1>${title}</h1><ul>${items}</ul><p>${name ?? "nobody"}</p>"
+}

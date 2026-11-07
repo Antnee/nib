@@ -1,0 +1,7 @@
+// expect: only error: an `OrderId` is an identity, not a number, so it has no `+`
+// A distinct type has no arithmetic unless it says it's a number.
+type OrderId: Int
+
+fn next(id: OrderId) -> Int {
+	return id + 1
+}

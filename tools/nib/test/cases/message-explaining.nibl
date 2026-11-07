@@ -1,0 +1,11 @@
+// expect: error: an error's `message` is for developers and logs, so it doesn't go on a form
+import std.forms.{@form, FormState}
+
+@form
+record EmailForm {
+	email: String
+}
+
+fn problem(state: FormState, error: ParseError) -> FormState {
+	return state.explaining(EmailForm.fields.email, text: error.message)
+}

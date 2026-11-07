@@ -1,0 +1,13 @@
+// expect: warning: nothing in `double` can fail: drop `else ParseError` from its signature
+fn double(n: Int) -> Int else ParseError {
+	return n * 2
+}
+
+// Each of these can fail, so none is warned about.
+fn parsed(text: String) -> Int else ParseError {
+	return try Int.parse(text)
+}
+
+fn positive(n: Int) -> Int else ParseError {
+	return n > 0 ? n : try Int.parse("not a number")
+}

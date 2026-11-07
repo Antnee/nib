@@ -1,0 +1,109 @@
+import std.codec.{Codable, Codec}
+import std.locale.{Locale}
+
+/// An amount in one currency. A record, so two amounts are equal when their amount and
+/// currency are. There are no operators: adding two amounts can fail, because they may be
+/// in different currencies, so `plus` says it can. Converting between currencies is an
+/// `ExchangeRate`'s job, never `Money`'s.
+///
+/// A database stores one in two columns, such as `total_amount` and `total_currency`, with
+/// `@db(embed: true, prefix: "total_")` on the field. JSON writes it as
+/// `{"amount": "3.95", "currency": "GBP"}`, the amount as text so it stays exact.
+///
+/// ```
+/// let price = Money(amount: 3.95, currency: Currency.of("GBP"))
+/// let total = try price.plus(shipping)
+/// ```
+pub record Money implements Codable<Codec> {
+	/// The amount, with at most as many places as the currency's minor units.
+	amount: Decimal
+
+	/// The currency it's in.
+	currency: Currency
+
+	/// An amount given in the currency's smallest unit, such as pence: `395` is `3.95`.
+	static fn fromMinorUnits(units: Int, currency: Currency) -> Money
+
+	/// Whether the amount is zero.
+	get isZero: Bool
+
+	/// Whether the amount is below zero, as a refund is.
+	get isNegative: Bool
+
+	/// This and `other` added. Fails if they're in different currencies.
+	fn plus(other: Money) -> Money else CurrencyMismatch
+
+	/// `other` taken from this. Fails if they're in different currencies.
+	fn minus(other: Money) -> Money else CurrencyMismatch
+
+	/// This multiplied by `factor`, such as a tax rate, rounded to the currency's minor
+	/// units as `rounding` says.
+	fn times(factor: Decimal, named rounding: Rounding) -> Money
+
+	/// Split in proportion to `ratios`, so the parts add up to exactly this amount: what
+	/// rounding leaves over goes, a minor unit at a time, to the parts that rounding reduced
+	/// most. Ten pounds allocated `by: [1, 2]` is `3.33` and `6.67`.
+	fn allocate(named by: List<Int>) -> List<Money>
+
+	/// The amount in the currency's smallest unit, such as pence or cents, as payment
+	/// providers expect: `3.95` is `395`. Panics if the amount has more places than the
+	/// currency's minor units.
+	fn toMinorUnits() -> Int
+
+	/// The amount as people in `locale` write it, with the currency's symbol: `£3.95` in
+	/// `en-GB`, `3,95 £` in `fr-FR`. From the host's locale data.
+	fn formatted(named locale: Locale) -> String
+}
+
+/// A currency, by its ISO 4217 code, such as `GBP`.
+pub record Currency implements Parseable, Stringable, Codable<Codec> {
+	/// The currency with `code`, such as `Currency.of("GBP")`. Panics if no currency has that
+	/// code; a code that comes from data is read with `parse`.
+	static fn of(code: String) -> Currency
+
+	/// Reads a three-letter code in either case, such as `GBP` or `gbp`. A code that isn't a
+	/// current ISO 4217 currency is an error.
+	override static fn parse(text: String) -> Currency else ParseError
+
+	/// The code in upper case, such as `GBP`.
+	get code: String
+
+	/// How many places its amounts have: 2 for pounds and euros, 0 for yen, 3 for dinars.
+	get minorDigits: Int
+
+	/// Its symbol as people in `locale` write it: `£` for pounds in `en-GB`, `US$` for
+	/// dollars in `en-GB` and `$` in `en-US`.
+	fn symbol(locale: Locale) -> String
+
+	/// Its name in `locale`'s language, such as `British pound`.
+	fn name(locale: Locale) -> String
+
+	/// The code, the same as `code`.
+	override fn toString() -> String
+}
+
+/// Two amounts in different currencies, which can't be added or compared.
+pub record CurrencyMismatch implements Error {
+	left: Currency
+	right: Currency
+
+	/// Names both currencies.
+	override get message: String
+}
+
+/// What one unit of a currency is worth in another, at a moment: `from` 1 is `to` `rate`.
+/// Where the rate comes from, such as a bank's API, is the app's business.
+///
+/// ```
+/// let rate = ExchangeRate(from: Currency.of("GBP"), to: Currency.of("EUR"), rate: 1.17)
+/// let euros = try rate.convert(price, rounding: Rounding.HalfToEven)
+/// ```
+pub record ExchangeRate {
+	from: Currency
+	to: Currency
+	rate: Decimal
+
+	/// `money`, which is in `from`, in `to`, rounded to `to`'s minor units as `rounding` says.
+	/// Fails if `money` isn't in `from`.
+	fn convert(money: Money, named rounding: Rounding) -> Money else CurrencyMismatch
+}

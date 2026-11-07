@@ -1,0 +1,10 @@
+# expect: error: write the name as a string, or a constant holding one
+[package]
+name = "demo"
+
+[config]
+DATABASE_URL = { secret = true }
+
+[databases.main]
+engine = "postgres"
+from = "DATABASE_URL"

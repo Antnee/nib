@@ -1,0 +1,4 @@
+// expect: error: type parameters with defaults come last
+interface Source<E = Never, T> {
+	fn next() -> T? else E
+}

@@ -1,0 +1,27 @@
+// expect: ok
+interface Shape {
+	fn area() -> Float
+
+	get name: String => "shape"
+}
+
+record Square implements Shape {
+	side: Float
+
+	override fn area() -> Float {
+		return this.side * this.side
+	}
+}
+
+record Circle implements Shape {
+	override name: String
+	radius: Float
+
+	override fn area() -> Float {
+		return 3.14159 * this.radius * this.radius
+	}
+}
+
+record Flag {
+	override: Bool
+}

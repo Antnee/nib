@@ -1,0 +1,96 @@
+import std.cache.{Cache, RateLimiter}
+import std.codec.{Codable, JsonCodec}
+import std.crypto.{SecureRandom}
+import std.crypto.passwords
+import std.http.{Method, Request}
+import std.queue.{Outbox}
+import std.time.{Clock, Duration, Instant}
+import std.uuid.{Uuids}
+
+// Stand-ins for the host's services, for tests. Each implements the interface that
+// production code asks for, so tests swap them in without mocking. Only test files can
+// import this module, so production code can't use a stand-in by mistake.
+
+/// A clock that stays where it is put.
+///
+/// ```
+/// let clock = FakeClock.at(Instant.parse("2026-09-15T10:00:00Z").orPanic("a fixed time"))
+/// clock.advance(Duration.of(minutes: 10))
+/// ```
+pub class FakeClock implements Clock {
+	/// A clock stopped at `instant`.
+	static fn at(instant: Instant) -> FakeClock
+
+	/// Moves the clock forward by `duration`. `sleep` does the same, without waiting.
+	fn advance(duration: Duration)
+}
+
+/// Gives predictable "random" values: the same sequence in every run, so tests can compare
+/// tokens.
+pub class FakeSecureRandom implements SecureRandom {
+	construct()
+}
+
+/// Makes UUIDs in the same sequence in every run, so tests can compare IDs. Each kind is
+/// built as the real one is, with its time taken from `clock`.
+///
+/// ```
+/// let uuids = new FakeUuids(clock)
+/// ```
+pub class FakeUuids implements Uuids {
+	construct(clock: Clock)
+}
+
+/// A cache that keeps values in memory, for one test. Its expiry follows `clock`, so a test
+/// can move past a value's `ttl` with `FakeClock`. It's never unreachable.
+pub class InMemoryCache implements Cache {
+	construct(clock: Clock)
+}
+
+/// A rate limiter that counts in memory, for one test. Its windows follow `clock`, so a
+/// test can move past a limit with `FakeClock`.
+pub class InMemoryRateLimiter implements RateLimiter {
+	construct(clock: Clock)
+}
+
+/// An outbox that keeps what is published, so tests can check it. Publishing never fails.
+///
+/// ```
+/// let outbox = new RecordingOutbox<EmailJob>()
+/// try outbox.publish(EmailJob.ConfirmEmail(userId: user.id))
+/// assert(outbox.published.length == 1)
+/// ```
+pub class RecordingOutbox<T: Codable<JsonCodec>> implements Outbox<T> {
+	construct()
+
+	/// Everything published so far, oldest first.
+	get published: List<T>
+}
+
+/// A deliberately weak password policy that hashes in microseconds, so tests that sign in
+/// stay fast. Its hashes would be quick to crack. It uses Argon2id, as the recommended
+/// policy does, with the smallest costs, so a test of rehashing sees the same algorithm.
+///
+/// ```
+/// let hash = passwords.hash(password, testing.FAST_PASSWORD_POLICY)
+/// ```
+pub const FAST_PASSWORD_POLICY: passwords.Policy
+
+/// A request built for a test, to pass straight to a handler or a guard. Its session starts
+/// empty and keeps what the handler writes, so the test can read it afterwards with
+/// `req.session.get(…)`. Its CSRF token is valid, a `form` is sent form-encoded, and its
+/// client address is `192.0.2.1`, one set aside for examples.
+///
+/// ```
+/// let req = testing.request(Method.Post, "/sign-in", form: ["email": "ann@example.com"])
+/// let response = try handlers.signIn(req, page)
+/// assert(response.status == Status.UNPROCESSABLE_CONTENT)
+/// ```
+pub fn request(
+	method: Method,
+	path: String,
+	named query: Map<String, String> = [:],
+	named form: Map<String, String> = [:],
+	named headers: Map<String, String> = [:],
+	named cookies: Map<String, String> = [:],
+) -> Request

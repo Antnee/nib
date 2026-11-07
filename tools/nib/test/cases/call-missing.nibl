@@ -1,0 +1,8 @@
+// expect: error: `pad` needs `width`, which this call leaves out
+fn pad(text: String, width: Int) -> String {
+	return text.padStart(width)
+}
+
+pub fn main() {
+	print(pad("a"))
+}

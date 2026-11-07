@@ -1,0 +1,26 @@
+// expect: ok
+enum LoadError implements Error {
+	Missing
+	Broken
+
+	override get message: String => "load failed"
+}
+
+fn load(path: String) -> String else LoadError {
+	return path.isEmpty ? fail LoadError.Missing : path
+}
+
+enum ConfigError implements Error {
+	Invalid
+	Load(from LoadError)
+
+	override get message: String => "couldn't load the configuration"
+}
+
+fn run() -> String else ConfigError {
+	let text = try load("a")
+	let other = load("b") catch err {
+		fail err
+	}
+	return "${text}${other}"
+}

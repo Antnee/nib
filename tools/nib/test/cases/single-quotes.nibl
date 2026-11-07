@@ -1,0 +1,4 @@
+// expect: error: single quotes are not used
+fn f() -> String {
+	return 'hi'
+}

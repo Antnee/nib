@@ -1,0 +1,115 @@
+import std.db.{DbError}
+import std.money.{Money}
+import shop.core.{RepositoryError, UnitOfWork}
+import shop.users.{UserId}
+
+/// Both the unit of work and the work it starts: `begin` returns itself. Changes apply
+/// immediately and `rollback` doesn't undo them, so tests check `commits` instead.
+class InMemoryOrdersWork implements OrdersWork, UnitOfWork<OrdersWork> {
+	override orders: InMemoryOrderRepository
+	override carts: InMemoryCartRepository
+	var commits: Int = 0
+	private var failCommit: Bool = false
+
+	construct(orders: InMemoryOrderRepository, carts: InMemoryCartRepository) {
+		this.orders = orders
+		this.carts = carts
+	}
+
+	/// Simulates the database going away at the last step. A method, because only a type
+	/// writes its own fields.
+	fn failCommits() {
+		this.failCommit = true
+	}
+
+	override fn begin() -> OrdersWork else RepositoryError {
+		return this
+	}
+
+	override fn commit() else RepositoryError {
+		if this.failCommit {
+			fail RepositoryError.Database(DbError.ConnectionLost)
+		}
+		this.commits++
+	}
+
+	override fn rollback() {}
+}
+
+class InMemoryCartRepository implements CartRepository {
+	var carts: Map<CartId, Cart> = [:]
+
+	static fn containing(cart: Cart) -> InMemoryCartRepository {
+		// A class, so `let` is enough: the class's own code can change its `var` fields.
+		let repository = new InMemoryCartRepository()
+		repository.carts.set(cart.id, cart)
+		return repository
+	}
+
+	override fn find(id: CartId) -> Cart? else RepositoryError {
+		return this.carts.get(id)
+	}
+
+	override fn delete(id: CartId) else RepositoryError {
+		this.carts.remove(id)
+	}
+}
+
+class InMemoryOrderRepository implements OrderRepository {
+	var orders: Map<OrderId, Order> = [:]
+
+	override fn create(order: NewOrder) -> Order else RepositoryError {
+		let id = this.orders.length + 1
+		let created = Order(
+			id: OrderId(id),
+			number: "SHOP-${id.formatted(width: 6, fill: "0")}",
+			customer: order.customer,
+			status: OrderStatus.Pending,
+			total: order.total,
+			placedAt: order.placedAt,
+		)
+		this.orders.set(created.id, created)
+		return created
+	}
+
+	/// Like the SQL repository, saves only the status and the payment.
+	override fn save(order: Order) else RepositoryError {
+		let stored = this.orders.get(order.id) ?? return
+		this.orders.set(order.id, stored with (status: order.status, paymentId: order.paymentId))
+	}
+
+	override fn forCustomer(customer: UserId) -> Iterable<Order, RepositoryError> {
+		for order in this.orders.values.sortedBy(fn(order) => order.placedAt, descending: true) {
+			if order.customer == customer {
+				yield order
+			}
+		}
+	}
+}
+
+/// Approves every charge unless told to decline, and records refunds.
+class FakePaymentGateway implements PaymentGateway {
+	construct(named private declineWith: String? = null) {}
+
+	var refunded: List<PaymentId> = []
+
+	static fn approving() -> FakePaymentGateway {
+		return new FakePaymentGateway()
+	}
+
+	static fn declining(reason: String) -> FakePaymentGateway {
+		return new FakePaymentGateway(declineWith: reason)
+	}
+
+	override fn charge(token: PaymentToken, amount: Money, named idempotencyKey: String) -> Payment else PaymentError {
+		let reason = this.declineWith
+		if reason is not null {
+			fail PaymentError.Declined(reason:)
+		}
+		return Payment(id: PaymentId("pay_123"))
+	}
+
+	override fn refund(payment: PaymentId, named idempotencyKey: String) else PaymentError {
+		this.refunded.push(payment)
+	}
+}

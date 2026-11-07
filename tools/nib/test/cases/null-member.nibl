@@ -1,0 +1,4 @@
+// expect: error: `name` may be `null`: check it with `name is not null` first, write `name?.length`, or give a fallback with `??`
+fn size(name: String?) -> Int {
+	return name.length
+}

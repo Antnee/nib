@@ -1,0 +1,70 @@
+import std.crypto.{Keyring}
+import std.time.{Duration}
+
+/// A cookie to send with `response.withCookie(…)`. Its defaults are the safe choice, and each
+/// is turned off by name: only over HTTPS (`secure`), hidden from the page's scripts
+/// (`httpOnly`), not sent with requests from other sites (`SameSite.Lax`), and for the whole
+/// site (`path = "/"`).
+///
+/// The value is percent-encoded when it's sent and decoded when it's read, so any text works.
+/// A cookie the browser would drop is a bug, so the host panics rather than send it: one over
+/// 4,096 bytes, or `SameSite.None` without `secure`.
+///
+/// ```
+/// let theme = Cookie(name: "theme", value: "dark", maxAge: Duration.of(days: 365), httpOnly: false)
+/// ```
+pub record Cookie {
+	/// The cookie's name, which `req.cookies.get(…)` reads it by.
+	name: String
+	/// The text it holds.
+	value: String
+	/// How long the browser keeps it. With none, it lasts until the browser closes.
+	maxAge: Duration? = null
+	/// Whether it's sent only over HTTPS.
+	secure: Bool = true
+	/// Whether it's hidden from the page's scripts.
+	httpOnly: Bool = true
+	/// Which requests from other sites carry it.
+	sameSite: SameSite = SameSite.Lax
+	/// The paths it's sent with.
+	path: String = "/"
+	/// The host it's sent to, and its subdomains. With none, only the host that set it.
+	domain: String? = null
+
+	/// A cookie the browser can read but can't change: its value is sent with a signature
+	/// made with `keyring`'s current key. Read it with `req.cookies.verified(…)`.
+	static fn signed(
+		named name: String,
+		named value: String,
+		named keyring: Keyring,
+		named maxAge: Duration? = null,
+		named httpOnly: Bool = true,
+		named sameSite: SameSite = SameSite.Lax,
+		named path: String = "/",
+		named domain: String? = null,
+	) -> Cookie
+
+	/// A cookie the browser can neither read nor change: its value is encrypted with
+	/// `keyring`'s current key. Read it with `req.cookies.decrypted(…)`.
+	static fn encrypted(
+		named name: String,
+		named value: String,
+		named keyring: Keyring,
+		named maxAge: Duration? = null,
+		named httpOnly: Bool = true,
+		named sameSite: SameSite = SameSite.Lax,
+		named path: String = "/",
+		named domain: String? = null,
+	) -> Cookie
+}
+
+/// Which requests from other sites carry a cookie.
+pub enum SameSite {
+	/// None of them.
+	Strict
+	/// Following a link from another site, but not a form posted from one or a request made
+	/// by its scripts.
+	Lax
+	/// All of them. Only allowed with `secure`.
+	None
+}

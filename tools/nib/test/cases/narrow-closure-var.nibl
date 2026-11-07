@@ -1,0 +1,5 @@
+// expect: error: a closure may run after a `var` changes, so a `var` isn't narrowed inside one; copy it to a `let` first
+fn run(items: List<Int>) -> List<Int> {
+	var name: String? = "start"
+	return items.map(fn(n) => n + name.length)
+}

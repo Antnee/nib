@@ -1,0 +1,50 @@
+import std.codec.{Codable, SessionCodec}
+import std.html.{Html}
+
+/// The name and value type of one thing a session holds. Declare each key once, so every
+/// read and write of it agrees on the type.
+///
+/// ```
+/// const SIGNED_IN_USER = SessionKey<UserId>("userId")
+/// ```
+pub type SessionKey<T: Codable<SessionCodec>>: String
+
+/// The visitor's session. It is a handle rather than part of the request: changes are saved
+/// when the response is sent, and `regenerate()` and `destroy()` take effect then too.
+pub class Session {
+	/// The value stored under `key`, or `null` if there is none.
+	fn get<T: Codable<SessionCodec>>(key: SessionKey<T>) -> T?
+
+	/// Stores `value` under `key`, replacing any earlier value.
+	fn put<T: Codable<SessionCodec>>(key: SessionKey<T>, value: T)
+
+	/// Removes the value stored under `key`, if there is one.
+	fn remove<T: Codable<SessionCodec>>(key: SessionKey<T>)
+
+	/// Stores `value` under `key` until it is next taken, typically on the next page.
+	fn flash<T: Codable<SessionCodec>>(key: SessionKey<T>, value: T)
+
+	/// The flashed value under `key`, removing it, or `null` if there is none.
+	fn takeFlash<T: Codable<SessionCodec>>(key: SessionKey<T>) -> T?
+
+	/// Gives the session a new ID and keeps its values. Do this on sign-in, to prevent
+	/// session fixation.
+	fn regenerate()
+
+	/// Removes the session and all its values, as on sign-out.
+	fn destroy()
+}
+
+/// A request's CSRF token, for each form that posts.
+///
+/// ```
+/// html"""<form method="post">${req.csrf.hiddenField}…</form>"""
+/// ```
+pub record CsrfToken implements Stringable {
+	/// The hidden form field that carries the token, which the router checks:
+	/// `<input type="hidden" name="_csrf" value="…">`.
+	get hiddenField: Html
+
+	/// The token, for a request header.
+	override fn toString() -> String
+}

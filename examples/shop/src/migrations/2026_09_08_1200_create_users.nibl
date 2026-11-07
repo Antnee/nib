@@ -1,0 +1,19 @@
+import std.db.{Db}
+import std.migrations.{Migration, MigrationError}
+
+record CreateUsers implements Migration {
+	override fn apply(db: Db) else MigrationError {
+		// `email` holds ciphertext. `email_idx` is its blind index (a keyed HMAC of the
+		// normalised address), which is what lookups and the unique constraint use.
+		try db.execute(sql"""
+			create table users (
+				id bigint generated always as identity primary key,
+				email bytea not null,
+				email_idx bytea not null unique,
+				password_hash text not null,
+				confirmed_at timestamptz,
+				created_at timestamptz not null
+			)
+			""")
+	}
+}

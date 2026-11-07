@@ -1,0 +1,8 @@
+// expect: only error: `times` isn't a `named` parameter, so it's passed without a label: drop `times:`
+fn repeat(text: String, times: Int) -> String {
+	return times > 1 ? "${text}${repeat(text, times - 1)}" : text
+}
+
+pub fn main() {
+	print(repeat("ab", times: 3))
+}

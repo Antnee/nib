@@ -1,0 +1,3 @@
+// expect: error: unknown type `Strng`
+fn f(name: Strng) {
+}

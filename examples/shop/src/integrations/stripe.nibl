@@ -1,0 +1,41 @@
+import std.http.{HttpClient}
+import std.money.{Money}
+import stripe
+import shop.orders.{Payment, PaymentError, PaymentGateway, PaymentId, PaymentToken}
+
+/// Wraps the `stripe/stripe` package. Only this file imports it, so the rest of the app
+/// sees only `PaymentGateway`. That's this app's own rule: the compiler only stops Stripe's
+/// types from appearing in the package's `pub` API, which other packages use.
+class StripeGateway implements PaymentGateway {
+	private client: stripe.Client
+
+	construct(http: HttpClient, apiKey: Secret) {
+		this.client = new stripe.Client(http, apiKey)
+	}
+
+	override fn charge(token: PaymentToken, amount: Money, named idempotencyKey: String) -> Payment else PaymentError {
+		let intent = this.client.paymentIntents
+			.create(
+				amount: amount.toMinorUnits(),
+				currency: amount.currency.code.toLowerCase(),
+				paymentMethod: token,
+				confirm: true,
+				idempotencyKey:,
+			) catch err { fail paymentError(err) }
+		return Payment(id: PaymentId(intent.id))
+	}
+
+	override fn refund(payment: PaymentId, named idempotencyKey: String) else PaymentError {
+		this.client.refunds
+			.create(paymentIntent: payment, idempotencyKey:) catch err { fail paymentError(err) }
+	}
+}
+
+/// Stripe's errors in the domain's terms. `_` is fine here: the default-arm lint only applies
+/// to enums from this package.
+fn paymentError(err: stripe.Error) -> PaymentError {
+	return match err {
+		stripe.Error.CardDeclined(reason:) => PaymentError.Declined(reason:)
+		_ => PaymentError.Unavailable(cause: err)
+	}
+}

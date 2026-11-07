@@ -1,0 +1,4 @@
+// expect: error: unknown string tag `shell`
+fn f() -> String {
+	return shell"ls -la"
+}

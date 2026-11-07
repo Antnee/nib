@@ -1,0 +1,125 @@
+import std.money.{Currency, Money}
+import std.testing.{FakeClock}
+import std.time.{Instant}
+import access.{Access}
+import shop.users with {UserId}
+
+const CUSTOMER = UserId(42)
+
+record Fixture {
+	checkout: CheckoutService
+	work: InMemoryOrdersWork
+	carts: InMemoryCartRepository
+	orders: InMemoryOrderRepository
+	gateway: FakePaymentGateway
+	cart: Cart
+}
+
+fn testCart() -> Cart {
+	return Cart(
+		id: CartId(1),
+		owner: CUSTOMER,
+		currency: Currency.of("GBP"),
+		address: Address(line1: "1 High Street", city: "Leeds", postcode: "LS1 1AA", country: "GB"),
+		lines: [
+			CartLine(sku: Sku("TEA-01"), name: "Breakfast tea", quantity: 2, unitPrice: 4.50, unitWeightGrams: 250),
+			CartLine(sku: Sku("MUG-02"), name: "Mug", quantity: 1, unitPrice: 9.00, unitWeightGrams: 400),
+		],
+	)
+}
+
+// Shipping, tax and stock are anonymous implementations. The gateway is a fake class
+// (see fakes.test.nibl), because tests need to see the refunds it was asked for.
+
+fn fixture() -> Fixture {
+	return fixture(FakePaymentGateway.approving())
+}
+
+fn fixture(gateway: FakePaymentGateway) -> Fixture {
+	let basket = testCart()
+	let carts = InMemoryCartRepository.containing(basket)
+	let orders = new InMemoryOrderRepository()
+	let work = new InMemoryOrdersWork(orders, carts)
+
+	let checkout = new CheckoutService(
+		work:,
+		carts:,
+		orders:,
+		shipping: new ShippingRates {
+			override fn quote(to: Address, weightGrams: Int) -> Money else ShippingError {
+				return Money(amount: 3.95, currency: Currency.of("GBP"))
+			}
+		},
+		taxes: new TaxRates {
+			override fn calculate(to: Address, subtotal: Money) -> Money else TaxError {
+				return subtotal.times(0.20, rounding: Rounding.HalfToEven)
+			}
+		},
+		inventory: new Inventory {
+			override fn check(sku: Sku, quantity: Int) -> StockCheck else InventoryError {
+				return StockCheck(sku:, requested: quantity, available: 10)
+			}
+		},
+		gateway:,
+		clock: FakeClock.at(Instant.parse("2026-09-15T10:00:00Z").orPanic("a fixed instant")),
+		access: new Access().register(new CartOwnerVoter()),
+	)
+
+	return Fixture(checkout:, work:, carts:, orders:, gateway:, cart: basket)
+}
+
+test "a successful checkout charges the total and empties the cart" {
+	let f = fixture()
+
+	let receipt = try f.checkout.run(f.cart.id, PaymentToken("tok_visa"), customer: users.testUser(CUSTOMER))
+
+	// 18.00 subtotal + 3.95 shipping + 3.60 tax
+	expect receipt.total == Money(amount: 25.55, currency: Currency.of("GBP"))
+	expect f.orders.orders.get(receipt.orderId)?.status == OrderStatus.Paid
+	expect try f.carts.find(f.cart.id) is null
+	expect f.work.commits == 1
+}
+
+test "a declined card marks the order as failed and keeps the cart" {
+	let f = fixture(FakePaymentGateway.declining("Insufficient funds"))
+
+	let result = f.checkout.run(f.cart.id, PaymentToken("tok_declined"), customer: users.testUser(CUSTOMER))
+
+	expect result is Result.Err(CheckoutError.PaymentFailed(PaymentError.Declined))
+	expect f.orders.orders.values.single?.status == OrderStatus.PaymentFailed
+	expect try f.carts.find(f.cart.id) is not null
+}
+
+test "if the order can't be marked paid, the charge is refunded" {
+	let f = fixture()
+	f.work.failCommits()
+
+	let result = f.checkout.run(f.cart.id, PaymentToken("tok_visa"), customer: users.testUser(CUSTOMER))
+
+	expect result is Result.Err(CheckoutError.Storage)
+	expect f.gateway.refunded == [PaymentId("pay_123")]
+}
+
+test "someone else's cart can't be checked out" {
+	let f = fixture()
+
+	let result = f.checkout.run(f.cart.id, PaymentToken("tok_visa"), customer: users.testUser(UserId(7)))
+
+	expect result is Result.Err(CheckoutError.CartNotFound)
+	expect f.orders.orders.isEmpty
+}
+
+test "a customer's orders are listed without anyone else's" {
+	let f = fixture()
+	let receipt = try f.checkout.run(f.cart.id, PaymentToken("tok_visa"), customer: users.testUser(CUSTOMER))
+
+	// Nothing is read until `toList` or the loop asks, so only they can fail.
+	let mine = f.orders.forCustomer(CUSTOMER).map(fn(order) => order.id)
+	expect try mine.toList() == [receipt.orderId]
+
+	var others = 0
+	for _ in try f.orders.forCustomer(UserId(7)) {
+		others++
+	}
+	expect others == 0
+}

@@ -1,0 +1,41 @@
+// expect: ok
+import std.compress.gzip
+import std.csv
+import std.csv.{@csv, CsvError}
+import std.files.{Dir, FileError}
+import std.io.{IoError}
+import std.io
+
+@csv
+record SaleRow {
+	sku: String
+	quantity: Int
+}
+
+enum ImportError implements Error {
+	Files(from FileError)
+	Csv(from CsvError)
+	Io(from IoError)
+
+	override get message: String => "couldn't import"
+}
+
+fn quantities(dir: Dir) -> Int else ImportError {
+	let rows = csv.decoding<SaleRow>(gzip.decompressing(try dir.open(path"sales.csv.gz")))
+	var total = 0
+	for batch in try rows.filter(fn(row) => row.quantity > 0).batched(100) {
+		total += batch.length
+	}
+	return total
+}
+
+fn copy(dir: Dir) -> Int else ImportError {
+	let out = try dir.create(path"copy.txt")
+	var count = 0
+	for line in try io.lines(try dir.open(path"access.log")).take(10) {
+		try out.write(line.toBytes())
+		count++
+	}
+	try out.close()
+	return count
+}

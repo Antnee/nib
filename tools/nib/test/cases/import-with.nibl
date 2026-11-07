@@ -1,0 +1,12 @@
+// expect: ok
+// `import std.log with {…}` brings in the module and names from it, on one line.
+import std.log with {@loggable, Level}
+
+@loggable
+record Totals {
+	lines: Int
+}
+
+fn report(totals: Totals, level: Level) {
+	log.info("totals", fields: ["totals": totals, "level": level])
+}

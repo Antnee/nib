@@ -1,0 +1,7 @@
+// expect: only error: a `FormError` is handled where it happens, with `catch` straight after the call
+// No error takes a `FormError` to pass it on.
+import std.forms.{FormError}
+
+enum PageError implements Error {
+	Form(from FormError)
+}

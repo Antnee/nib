@@ -1,0 +1,6 @@
+# expect: error: one variable has one type
+[package]
+name = "demo"
+
+[config]
+PORT = {}

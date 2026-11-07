@@ -1,0 +1,2 @@
+// expect: error: module `std.http` has no `Reponse`; did you mean `Response`?
+import std.http.{Reponse}

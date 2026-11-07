@@ -1,0 +1,21 @@
+// expect: error: more than one variant of `RunError` takes a `LoadError` with `from` (`RunError.Failed` and `RunError.Other`)
+enum LoadError implements Error {
+	Missing
+
+	override get message: String => "load failed"
+}
+
+enum RunError implements Error {
+	Failed(from Error)
+	Other(from Error)
+
+	override get message: String => "running failed"
+}
+
+fn load() -> String else LoadError {
+	fail LoadError.Missing
+}
+
+fn run() -> String else RunError {
+	return try load()
+}

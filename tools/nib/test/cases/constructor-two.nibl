@@ -1,0 +1,5 @@
+// expect: error: a class has one constructor
+class Greeter {
+	construct() {}
+	construct(private greeting: String) {}
+}

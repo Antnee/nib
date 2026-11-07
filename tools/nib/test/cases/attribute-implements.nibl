@@ -1,0 +1,19 @@
+// expect: error: `Profile` has no static member `blank`
+interface Defaults {
+	static fn empty() -> This
+}
+
+attribute defaults implements Defaults {}
+
+@defaults
+record Profile {
+	name: String
+}
+
+fn fresh() -> Profile {
+	return Profile.empty()
+}
+
+fn typo() -> Profile {
+	return Profile.blank()
+}

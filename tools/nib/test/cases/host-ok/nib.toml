@@ -1,0 +1,24 @@
+# expect: ok
+[package]
+name = "demo"
+
+[config]
+DATABASE_URL = { secret = true }
+API_KEY = { secret = true }
+PORT = {}
+OUT_DIR = {}
+REDIS_URL = { secret = true }
+
+[databases.main]
+engine = "postgres"
+from = "DATABASE_URL"
+
+[queues]
+jobs = { database = "main" }
+
+[directories.out]
+access = "write"
+from = "OUT_DIR"
+
+[caches.main]
+from = "REDIS_URL"

@@ -1,0 +1,12 @@
+// expect: error: only `Email`'s own functions can make one, so use `Email.parse(…)`
+type Email: private String implements Parseable {
+	override static fn parse(text: String) -> Email else ParseError {
+		return Email(text)
+	}
+}
+
+fn send(to: Email) {}
+
+fn run(address: String) {
+	send(address)
+}

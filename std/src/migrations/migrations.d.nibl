@@ -1,0 +1,48 @@
+import std.db.{Db, DbError}
+
+/// One change to the database's schema. Each lives in its own file in the package's
+/// migrations module, and they run in file-name order, each at most once. Migrations only
+/// go forward: to undo one, write another. A migration is a record, not a class: it holds no
+/// dependencies, since `apply` is given the database, so the runner builds it with no
+/// arguments.
+///
+/// ```
+/// record CreateTags implements Migration {
+/// 	override fn apply(db: Db) else MigrationError {
+/// 		try db.execute(sql"create table tags (name text primary key)")
+/// 	}
+/// }
+/// ```
+pub interface Migration {
+	/// Makes the change. Each statement runs as soon as it is called, so later lines see
+	/// its effect. A check that doesn't hold should `fail`, which rolls the migration back
+	/// when it runs in a transaction.
+	fn apply(db: Db) else MigrationError
+
+	/// Whether `apply` runs in one transaction, which is the default. A migration answers
+	/// `false` for statements a transaction can't hold, such as Postgres's
+	/// `create index concurrently`:
+	///
+	/// ```
+	/// record AddSearchIndex implements Migration {
+	/// 	override fn apply(db: Db) else MigrationError {
+	/// 		try db.execute(sql"create index concurrently orders_email_idx on orders (email)")
+	/// 	}
+	///
+	/// 	override get transactional: Bool => false
+	/// }
+	/// ```
+	get transactional: Bool => true
+}
+
+/// Why a migration failed.
+pub enum MigrationError implements Error {
+	/// A statement failed.
+	Database(from DbError)
+
+	/// A check in the migration didn't hold, such as rows left without a value.
+	Check(reason: String)
+
+	/// What went wrong.
+	override get message: String
+}

@@ -1,0 +1,8 @@
+// expect: warning: `tx` is never committed, so its work is rolled back when it ends: finish with `try tx.commit()`
+import std.db.{Db, DbError}
+
+fn clear(db: Db) else DbError {
+	let tx = try db.begin()
+	defer tx.rollback()
+	try tx.execute(sql"delete from carts")
+}

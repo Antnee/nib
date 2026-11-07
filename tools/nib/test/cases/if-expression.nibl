@@ -1,0 +1,4 @@
+// expect: error: `if` is a statement
+fn f(b: Bool) -> Int {
+	return if b { 1 } else { 2 }
+}

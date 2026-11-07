@@ -1,0 +1,6 @@
+// expect: error: `2.5` has a point, but `quantity` needs an `Int`, which is a whole number
+fn order(quantity: Int) {}
+
+fn run() {
+	order(2.5)
+}

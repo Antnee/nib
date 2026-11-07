@@ -1,0 +1,6 @@
+/// Says hello.
+pub class Greeter {
+	construct()
+
+	fn greet(named name: String) -> String
+}

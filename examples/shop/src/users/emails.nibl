@@ -1,0 +1,16 @@
+import std.json.{@json}
+import std.queue.{QueueAddress}
+
+/// The emails that account work asks for, as jobs on the `emails` queue, which `mail` sends.
+/// They carry IDs and keys only: no addresses, no tokens. The queue lives in the database, so
+/// anything in a job is stored at rest; personal data stays encrypted in `users`, and tokens
+/// are issued when the email is actually sent.
+@json
+enum EmailJob {
+	ConfirmEmail(userId: UserId)
+	// The address's key, because whether it has an account is found out when it's sent.
+	ResetRequested(emailKey: EmailKey)
+	AccountExists(userId: UserId)
+}
+
+const EMAILS = QueueAddress<EmailJob>("emails")

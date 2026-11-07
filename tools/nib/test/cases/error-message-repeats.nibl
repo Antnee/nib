@@ -1,0 +1,14 @@
+// expect: warning: reads another error's `message`; describe this layer only
+record MissingKey implements Error {
+	key: String
+
+	override get message: String => "${this.key} is missing"
+}
+
+enum ConfigProblem implements Error {
+	Lookup(from MissingKey)
+
+	override get message: String => match this {
+		ConfigProblem.Lookup(e) => "configuration: ${e.message}"
+	}
+}

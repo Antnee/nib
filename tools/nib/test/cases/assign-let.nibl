@@ -1,0 +1,6 @@
+// expect: error: `total` is declared with `let`, so it can't be assigned: declare it with `var` if it changes
+fn run() -> Int {
+	let total = 0
+	total = 2
+	return total
+}

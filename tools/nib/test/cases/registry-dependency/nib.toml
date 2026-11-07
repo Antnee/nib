@@ -1,0 +1,6 @@
+# expect: error: `greet` has no parameter `who`
+[package]
+name = "demo"
+
+[dependencies]
+hello = { package = "acme/greet", version = "^1.0.0" }

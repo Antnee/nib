@@ -1,0 +1,45 @@
+import std.codec.{Codable, Codec}
+
+/// A language and, optionally, a region, used to write dates and times the way people there
+/// read them. It comes from where the person's preference is kept: their settings, a form or
+/// the app's config. There is no default locale.
+///
+/// ```
+/// let locale = try Locale.parse(settings.language)
+/// ```
+pub record Locale implements Parseable, Stringable, Codable<Codec> {
+	/// Reads a BCP 47 language tag, such as `en-GB` or `cy`. A well-formed tag that the
+	/// host's locale data doesn't have formats as its nearest one, as browsers do: `en-XY`
+	/// formats as `en`.
+	override static fn parse(text: String) -> Locale else ParseError
+
+	/// The language tag, such as `en-GB`.
+	get tag: String
+
+	/// The region the tag names, such as `GB` for `en-GB`, or `null` for a tag with none.
+	get country: CountryCode?
+
+	/// The language tag, the same as `tag`.
+	override fn toString() -> String
+}
+
+/// A country or region, by its ISO 3166-1 two-letter code, such as `GB`.
+///
+/// ```
+/// let zones = TimeZone.forCountry(try CountryCode.parse(form.country))
+/// ```
+pub record CountryCode implements Parseable, Stringable, Codable<Codec> {
+	/// Reads a two-letter code in either case, such as `GB` or `gb`. A code that isn't
+	/// assigned to a country or region is an error.
+	override static fn parse(text: String) -> CountryCode else ParseError
+
+	/// The code in upper case, such as `GB`.
+	get code: String
+
+	/// The country's name in `locale`'s language, from the host's locale data: `United
+	/// Kingdom` in English, `Y Deyrnas Unedig` in Welsh.
+	fn name(locale: Locale) -> String
+
+	/// The code, the same as `code`.
+	override fn toString() -> String
+}

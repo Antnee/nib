@@ -1,0 +1,4 @@
+// expect: error: a `lazy` field needs
+class Box {
+	lazy x: Int
+}

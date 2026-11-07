@@ -1,0 +1,434 @@
+import std.codec.{Codable, Codec}
+import std.locale.{CountryCode, Locale}
+
+// Moments are stored and compared as `Instant`s, which have no time zone. A moment becomes
+// a local date and time only when code names the zone, with `instant.in(zone)`, so nothing
+// depends on the server's zone. Time zone rules come from the host's time zone database.
+
+/// An exact length of time, to the nanosecond. A day is always 24 hours, so it's no use for
+/// calendar arithmetic, where daylight saving can make a day 23 or 25 hours: a calendar
+/// length, such as a month, is a `Period`, which is added to a `Date`.
+///
+/// Durations compare with `<` and the other comparisons. Their arithmetic is named:
+/// `plus`, `minus`, `times` and `dividedBy`.
+pub record Duration implements Comparable, Stringable, Codable<Codec> {
+	/// A duration of zero length.
+	const ZERO: Duration
+
+	/// Builds a duration from any mix of units. Each may be a fraction, as long as the
+	/// total comes to a whole number of nanoseconds.
+	///
+	/// ```
+	/// let timeout = Duration.of(minutes: 10.5)
+	/// let gap = Duration.of(days: 4, hours: 2, minutes: 7, seconds: 32)
+	/// ```
+	static fn of(
+		named weeks: Decimal = 0,
+		named days: Decimal = 0,
+		named hours: Decimal = 0,
+		named minutes: Decimal = 0,
+		named seconds: Decimal = 0,
+		named milliseconds: Decimal = 0,
+		named microseconds: Decimal = 0,
+		named nanoseconds: Decimal = 0,
+	) -> Duration
+
+	/// Reads an ISO 8601 duration, such as `PT10M30S`. Calendar units (`P1M`, `P1Y`) are
+	/// rejected, because they have no fixed length.
+	static fn parse(text: String) -> Duration else ParseError
+
+	/// The whole number of seconds, rounded towards zero.
+	get inSeconds: Int
+
+	/// The duration as people in `locale` write it, in hours, minutes and seconds: `24 hours`,
+	/// `1 hour` and `10 minutes 30 seconds` in `en-GB`, `10 minutes et 30 secondes` in
+	/// `fr-FR`. From the host's locale data. There are no days, because a calendar day isn't
+	/// always 24 hours. Not meant to be parsed back; use `toString()` for data.
+	fn formatted(named locale: Locale) -> String
+
+	/// The duration in ISO 8601 form, such as `PT10M30S`.
+	override fn toString() -> String
+
+	/// This duration with `other` added.
+	fn plus(other: Duration) -> Duration
+
+	/// This duration with `other` taken away. The result can be negative.
+	fn minus(other: Duration) -> Duration
+
+	/// This duration multiplied by `factor`, which can be any number type, rounded towards
+	/// zero to the nanosecond.
+	///
+	/// ```
+	/// let backoff = Duration.of(seconds: 2).times(attempt)
+	/// let longer = timeout.times(1.5)
+	/// ```
+	fn times<N: Numeric>(factor: N) -> Duration
+
+	/// This duration divided by `divisor`, rounded towards zero to the nanosecond. Panics if
+	/// `divisor` is zero.
+	fn dividedBy(divisor: Int) -> Duration
+}
+
+/// A point in time, independent of any time zone. Seconds are counted as Unix time counts
+/// them, with no leap seconds: the host's clock absorbs a leap second, and so does this.
+///
+/// Instants compare in time order, with `<` and the other comparisons. A database stores one
+/// in UTC: in a `timestamptz` column on Postgres, and a `datetime(6)` column on MySQL, whose
+/// `timestamp` type ends in 2038. JSON writes it in RFC 3339 form, also in UTC.
+///
+/// ```
+/// let expiresAt = clock.now().plus(Duration.of(hours: 24))
+/// ```
+pub record Instant implements Comparable, Stringable, Codable<Codec> {
+	/// 1970-01-01T00:00:00Z.
+	const EPOCH: Instant
+
+	/// Reads an RFC 3339 timestamp, such as `2026-09-15T10:00:00Z`.
+	static fn parse(text: String) -> Instant else ParseError
+
+	/// The instant `duration` after this one.
+	fn plus(duration: Duration) -> Instant
+
+	/// The instant `duration` before this one.
+	fn minus(duration: Duration) -> Instant
+
+	/// How long after `earlier` this instant is. Negative if `earlier` is in fact later.
+	///
+	/// ```
+	/// let elapsed = clock.now().since(startedAt)
+	/// ```
+	fn since(earlier: Instant) -> Duration
+
+	/// This instant as a date and time in `zone`. Each instant has exactly one in any zone,
+	/// so this can't fail.
+	///
+	/// ```
+	/// let placed = order.placedAt.in(customer.timeZone)
+	/// let today = clock.now().in(customer.timeZone).date
+	/// ```
+	fn in(zone: TimeZone) -> ZonedDateTime
+
+	/// The instant in RFC 3339 form, in UTC, such as `2026-09-25T10:15:00Z`.
+	override fn toString() -> String
+}
+
+/// A calendar date with no time or zone, such as 2026-09-17. A database stores one in a
+/// `date` column, and JSON and forms write it in ISO 8601 form.
+///
+/// Dates compare in calendar order, with `<` and the other comparisons.
+pub record Date implements Comparable, Parseable, Stringable, Codable<Codec> {
+	/// The date with this year, month and day. Panics if there's no such day, such as 30
+	/// February; the compiler reports that when the arguments are literals. A date that comes
+	/// from people is read with `parse`, which fails instead.
+	///
+	/// ```
+	/// let launch = Date.of(year: 2026, month: Month.November, day: 4)
+	/// ```
+	static fn of(named year: Int, named month: Month, named day: Int) -> Date
+
+	/// Reads an ISO 8601 date, such as `2026-09-17`.
+	override static fn parse(text: String) -> Date else ParseError
+
+	/// The year, such as `2026`.
+	get year: Int
+
+	/// The month.
+	get month: Month
+
+	/// The day of the month, from 1 to 31.
+	get day: Int
+
+	/// The day of the week.
+	get weekday: Weekday
+
+	/// The date `period` after this one. Years and months are added first, then days. When
+	/// the day doesn't exist in the month reached, the result is that month's last day, so
+	/// 31 January plus a month is 28 February, or 29 February in a leap year.
+	///
+	/// ```
+	/// let renewsOn = startedOn.plus(Period.of(months: 1))
+	/// ```
+	fn plus(period: Period) -> Date
+
+	/// The date `period` before this one, by the same rules as `plus`.
+	fn minus(period: Period) -> Date
+
+	/// How many days after `earlier` this date is. Negative if `earlier` is in fact later.
+	fn daysSince(earlier: Date) -> Int
+
+	/// The moment when this date reaches `time` in `zone`.
+	///
+	/// At a change of the clocks, a local time can be missing or happen twice. A time that's
+	/// missing, such as 01:30 on the night the clocks go forward an hour, moves forward by
+	/// the gap, to 02:30. A time that happens twice, as 01:30 does when they go back, is the
+	/// first of the two. These are the rules that other date libraries and databases use.
+	///
+	/// ```
+	/// let tomorrow = clock.now().in(zone).date.plus(Period.of(days: 1))
+	/// let remindAt = tomorrow.at(Time.of(hour: 9), zone).instant
+	/// ```
+	fn at(time: Time, zone: TimeZone) -> ZonedDateTime
+
+	/// The date for people to read, written as `locale` writes it. In `en-GB`:
+	///
+	/// - `DateStyle.Short`: `04/11/2026`
+	/// - `DateStyle.Medium`: `4 Nov 2026`
+	/// - `DateStyle.Long`: `4 November 2026`
+	/// - `DateStyle.Full`: `Wednesday 4 November 2026`
+	///
+	/// Not meant to be parsed back; use `toString()` for data.
+	fn formatted(style: DateStyle, named locale: Locale) -> String
+
+	/// The date in ISO 8601 form, such as `2026-09-25`.
+	override fn toString() -> String
+}
+
+/// A time of day with no date or zone, such as 09:30, to the nanosecond. A database stores
+/// one in a `time` column, and JSON and forms write it in ISO 8601 form, such as `09:30:00`.
+///
+/// Times compare in clock order, with `<` and the other comparisons.
+pub record Time implements Comparable, Parseable, Stringable, Codable<Codec> {
+	/// 00:00.
+	const MIDNIGHT: Time
+
+	/// The time with this hour, from 0 to 23, minute and second. Panics if one is out of
+	/// range; the compiler reports that when the arguments are literals. A time that comes
+	/// from people is read with `parse`, which fails instead.
+	///
+	/// ```
+	/// let opens = Time.of(hour: 9, minute: 30)
+	/// ```
+	static fn of(named hour: Int, named minute: Int = 0, named second: Int = 0) -> Time
+
+	/// Reads an ISO 8601 time, such as `09:30` or `09:30:15.5`.
+	override static fn parse(text: String) -> Time else ParseError
+
+	/// The hour, from 0 to 23.
+	get hour: Int
+
+	/// The minute, from 0 to 59.
+	get minute: Int
+
+	/// The second, from 0 to 59.
+	get second: Int
+
+	/// The time for people to read, written as `locale` writes it. In `en-GB`:
+	///
+	/// - `TimeStyle.Short`: `09:30`
+	/// - `TimeStyle.Medium`: `09:30:15`
+	///
+	/// The longer styles name a zone, which a `Time` doesn't have, so they write the same as
+	/// `TimeStyle.Medium`. Not meant to be parsed back; use `toString()` for data.
+	fn formatted(style: TimeStyle, named locale: Locale) -> String
+
+	/// The time in ISO 8601 form, such as `09:30:00`.
+	override fn toString() -> String
+}
+
+/// A moment seen in a time zone: the date and time a clock there showed. It's a view for
+/// reading and showing, so it has no arithmetic. Add a `Duration` to its `instant`, or a
+/// `Period` to its `date`, then convert again.
+///
+/// It isn't stored as one value. Store its `instant` and its `zone` in columns of their own,
+/// so a change to the zone's rules can't change what was stored.
+///
+/// ```
+/// let placed = order.placedAt.in(customer.timeZone)
+/// let shown = placed.formatted(date: DateStyle.Medium, time: TimeStyle.Short, locale:)
+/// ```
+pub record ZonedDateTime implements Comparable, Stringable {
+	/// The moment.
+	get instant: Instant
+
+	/// The zone it's seen in.
+	get zone: TimeZone
+
+	/// The date a calendar in `zone` showed at that moment.
+	get date: Date
+
+	/// The time a clock in `zone` showed at that moment.
+	get time: Time
+
+	/// How far the zone's clocks were ahead of UTC at that moment, such as one hour for
+	/// London in summer. Negative for zones behind UTC.
+	get offset: Duration
+
+	/// The date and time for people to read, written as `locale` writes them, with a style
+	/// for each part, as `Date.formatted` and `Time.formatted` describe. In `en-GB`, with
+	/// `DateStyle.Medium` and `TimeStyle.Short`, that's `4 Nov 2026, 10:15`.
+	///
+	/// - `TimeStyle.Long` adds the zone's abbreviation: `10:15:00 GMT`
+	/// - `TimeStyle.Full` adds its name: `10:15:00 Greenwich Mean Time`
+	///
+	/// Not meant to be parsed back.
+	fn formatted(named date: DateStyle, named time: TimeStyle, named locale: Locale) -> String
+
+	/// The date, time, offset and zone, such as `2026-09-25T10:15:00+00:00[Europe/London]`,
+	/// for logs and debugging.
+	override fn toString() -> String
+}
+
+/// An IANA time zone, such as `Europe/London`, with its rules from the host's time zone
+/// database. A database stores one as its ID in a text column, and so do JSON and forms.
+///
+/// There's no default zone: code that turns an instant into a date or a time says which zone
+/// it means.
+///
+/// ```
+/// let zone = try TimeZone.parse(settings.timeZone)
+/// ```
+pub record TimeZone implements Parseable, Stringable, Codable<Codec> {
+	/// Coordinated Universal Time, which has no daylight saving.
+	const UTC: TimeZone
+
+	/// Reads an IANA zone ID, such as `Europe/London` or `UTC`. Older IDs that the database
+	/// keeps as links to another zone, such as `Europe/Belfast`, are accepted, and keep the
+	/// ID they were read with.
+	override static fn parse(text: String) -> TimeZone else ParseError
+
+	/// Every zone in the host's database, by ID, leaving out the older IDs that link to
+	/// another zone.
+	static fn all() -> List<TimeZone>
+
+	/// The zones used in `country`, as the database lists them: one for most countries, and
+	/// several for countries that span more than one, such as `America/New_York` and
+	/// `America/Los_Angeles` in the US.
+	///
+	/// A page that asks for a zone can ask for the country first, then show only that
+	/// country's zones, each with its `location`'s comment.
+	///
+	/// ```
+	/// let choices = TimeZone.forCountry(country).map(fn(zone) => zone.location?.comment ?? country.name(locale))
+	/// ```
+	static fn forCountry(country: CountryCode) -> List<TimeZone>
+
+	/// The ID, such as `Europe/London`. It names the zone after a city in it, and it's meant
+	/// for storing, not for showing to people.
+	get id: String
+
+	/// Where the database places the zone, or `null` for a zone that isn't in any one
+	/// country, such as `UTC`.
+	get location: ZoneLocation?
+
+	/// The ID, the same as `id`.
+	override fn toString() -> String
+}
+
+/// Where the time zone database places a zone.
+pub record ZoneLocation {
+	/// The country the zone is in.
+	get country: CountryCode
+
+	/// What the database says the zone covers when a country has more than one, such as
+	/// `Gaza Strip` or `Pacific`, in English, or `null` when the zone covers the whole
+	/// country.
+	get comment: String?
+}
+
+/// A length of calendar time, in years, months and days, such as 1 month. Its length in
+/// hours depends on the date it's added to, so it's added to a `Date` and never to an
+/// `Instant`. Stored as an ISO 8601 period, such as `P1Y2M3D`.
+pub record Period implements Stringable, Codable<Codec> {
+	/// A period of no length.
+	const ZERO: Period
+
+	/// Builds a period from any mix of units. A week is 7 days.
+	///
+	/// ```
+	/// let trial = Period.of(days: 14)
+	/// let term = Period.of(years: 1, months: 6)
+	/// ```
+	static fn of(named years: Int = 0, named months: Int = 0, named weeks: Int = 0, named days: Int = 0) -> Period
+
+	/// Reads an ISO 8601 period, such as `P1M` or `P2W`. Time units (`PT10M`) are rejected,
+	/// because a length of time is a `Duration`.
+	static fn parse(text: String) -> Period else ParseError
+
+	/// The years.
+	get years: Int
+
+	/// The months, which aren't turned into years, so 18 months stays 18 months.
+	get months: Int
+
+	/// The days, with weeks counted as 7 days each.
+	get days: Int
+
+	/// The period in ISO 8601 form, such as `P1Y6M`.
+	override fn toString() -> String
+}
+
+/// A month of the year, stored as its number, 1 for January.
+pub enum Month: Int {
+	January = 1
+	February = 2
+	March = 3
+	April = 4
+	May = 5
+	June = 6
+	July = 7
+	August = 8
+	September = 9
+	October = 10
+	November = 11
+	December = 12
+}
+
+/// A day of the week, stored as its ISO 8601 number, 1 for Monday.
+pub enum Weekday: Int {
+	Monday = 1
+	Tuesday = 2
+	Wednesday = 3
+	Thursday = 4
+	Friday = 5
+	Saturday = 6
+	Sunday = 7
+}
+
+/// How much of a date `formatted` writes. Each locale has its own form for each style.
+pub enum DateStyle {
+	/// Digits only, such as `04/11/2026` in `en-GB`.
+	Short
+
+	/// An abbreviated month, such as `4 Nov 2026`.
+	Medium
+
+	/// The month in full, such as `4 November 2026`.
+	Long
+
+	/// The day of the week too, such as `Wednesday 4 November 2026`.
+	Full
+}
+
+/// How much of a time `formatted` writes. Each locale has its own form for each style.
+pub enum TimeStyle {
+	/// Hours and minutes, such as `10:15` in `en-GB`.
+	Short
+
+	/// Seconds too, such as `10:15:30`.
+	Medium
+
+	/// The zone's abbreviation too, such as `10:15:30 GMT`.
+	Long
+
+	/// The zone's name too, such as `10:15:30 Greenwich Mean Time`.
+	Full
+}
+
+/// Tells the time. Code asks a `Clock` for the time instead of reading the system clock, so
+/// tests can use a fixed one (`FakeClock` in `std.testing`).
+///
+/// A clock gives instants, not dates. Today's date depends on where you are, so ask for it
+/// in a zone: `clock.now().in(zone).date`.
+pub interface Clock {
+	/// The current instant.
+	fn now() -> Instant
+
+	/// Waits for `duration`, letting other tasks run meanwhile, as any other wait does. A
+	/// cancelled task stops waiting at once. A fake clock moves forward instead of waiting,
+	/// so a test of retries runs instantly.
+	///
+	/// ```
+	/// clock.sleep(Duration.of(milliseconds: 500))
+	/// ```
+	fn sleep(duration: Duration)
+}

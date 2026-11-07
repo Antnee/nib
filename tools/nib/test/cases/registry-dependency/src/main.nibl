@@ -1,0 +1,7 @@
+import hello.{Greeter}
+
+// The dependency is read under the key the manifest gives it, so its calls are checked.
+pub fn main() {
+	print(new Greeter().greet(name: "Ann"))
+	print(new Greeter().greet(who: "Ann"))
+}

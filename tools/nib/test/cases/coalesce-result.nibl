@@ -1,0 +1,15 @@
+// expect: error: `??` handles `null`, and this is an error result: handle the error with `catch`, or pass it on with `try`
+enum LoadError implements Error {
+	Missing
+	Broken
+
+	override get message: String => "load failed"
+}
+
+fn load(path: String) -> String else LoadError {
+	return path
+}
+
+fn run() -> String {
+	return load("a") ?? "none"
+}

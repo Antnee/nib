@@ -1,0 +1,10 @@
+// expect: only error: the constructor sets `name` on only some paths: set it on every one
+class Greeter {
+	construct(greeting: String) {
+		if greeting != "" {
+			this.name = greeting
+		}
+	}
+
+	name: String
+}

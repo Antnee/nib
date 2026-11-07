@@ -1,0 +1,64 @@
+// expect: error: a route's pattern is written as a plain string, with no `${…}`, so its handler can be checked against it
+import std.http.{@guard, @path, Request, Response, Route, Routes, ToResponse}
+
+type ShopId: Int implements Parseable
+type OrderId: Int implements Parseable
+
+enum WebError implements ToResponse {
+	NotFound
+
+	override get message: String => "not found"
+
+	override fn toResponse() -> Response {
+		return Response.notFound()
+	}
+}
+
+record User {
+	name: String
+}
+
+record Shop {
+	id: ShopId
+}
+
+class Guards {
+	fn user(req: Request) -> User else WebError {
+		fail WebError.NotFound
+	}
+
+	fn shop(req: Request, @guard user: User, @path shopId: ShopId) -> Shop else WebError {
+		fail WebError.NotFound
+	}
+}
+
+class Pages {
+	fn home(req: Request) -> Response {
+		return Response.notFound()
+	}
+
+	fn order(req: Request, @guard shop: Shop, @path orderId: OrderId) -> Response else WebError {
+		return Response.notFound()
+	}
+
+	fn account(req: Request, @guard user: User) -> Response else WebError {
+		return Response.notFound()
+	}
+
+	fn file(req: Request, @path path: String) -> Response {
+		return Response.notFound()
+	}
+}
+
+class Services {
+	guards: Guards
+	pages: Pages
+}
+
+fn routes(base: String) -> Routes<Services> {
+	return Routes(
+		routes: [
+			Route.get("${base}/home", fn(app) => app.pages.home),
+		],
+	)
+}

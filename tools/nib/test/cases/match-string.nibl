@@ -1,0 +1,7 @@
+// expect: error: a `match` on a `String` can't list every value, so it needs a `_ =>` arm
+fn describe(code: String) -> Int {
+	return match code {
+		"a" => 1
+		"b" => 2
+	}
+}

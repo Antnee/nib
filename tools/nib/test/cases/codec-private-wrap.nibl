@@ -1,0 +1,9 @@
+// expect: error: `email` is an `Email`, which `@json` can't write or read
+import std.json.{@json}
+
+type Email: private String
+
+@json
+record Contact {
+	email: Email
+}

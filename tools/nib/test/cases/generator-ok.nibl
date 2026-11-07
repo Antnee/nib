@@ -1,0 +1,34 @@
+// expect: ok
+enum ParseFailure implements Error {
+	Bad(from ParseError)
+
+	override get message: String => "not a number"
+}
+
+fn evens(limit: Int) -> Iterable<Int> {
+	var n = 0
+	while n <= limit {
+		yield n
+		n += 2
+	}
+}
+
+fn numbers(lines: List<String>) -> Iterable<Int, ParseFailure> {
+	for line in lines {
+		if line.isEmpty {
+			return
+		}
+		yield try Int.parse(line)
+	}
+}
+
+fn total(lines: List<String>) -> Int else ParseFailure {
+	var sum = 0
+	for n in try numbers(lines) {
+		sum += n
+	}
+	for n in evens(10) {
+		sum += n
+	}
+	return sum
+}

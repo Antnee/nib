@@ -1,0 +1,9 @@
+// expect: error: which is a reserved word
+attribute retired {
+	use: String
+}
+
+@retired(use:)
+fn old() -> Int {
+	return 1
+}

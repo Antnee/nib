@@ -1,0 +1,8 @@
+// expect: error: this is an `Int`, but `label` is declared as a `String`
+fn first<T>(items: List<T>) -> T {
+	return items[0]
+}
+
+fn run(numbers: List<Int>) {
+	let label: String = first(numbers)
+}

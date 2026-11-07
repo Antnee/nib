@@ -1,0 +1,2 @@
+// expect: error: top level holds only declarations
+let x = 1

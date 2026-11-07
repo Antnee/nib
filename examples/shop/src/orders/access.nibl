@@ -1,0 +1,22 @@
+import access.{DenialCode, Vote, Voter}
+import shop.users.{User}
+
+/// What a signed-in user can do with a cart.
+enum CartAction {
+	View
+	CheckOut
+}
+
+enum CartDenial implements DenialCode {
+	NotOwner
+}
+
+/// Carts are private: only their owner can see or check out one, whatever the action.
+class CartOwnerVoter implements Voter<User, CartAction, Cart> {
+	override fn vote(user: User, _: CartAction, cart: Cart) -> Vote {
+		if cart.owner == user.id {
+			return Vote.Allow
+		}
+		return Vote.Deny(code: CartDenial.NotOwner, message: "cart belongs to another customer")
+	}
+}

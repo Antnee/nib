@@ -1,0 +1,114 @@
+import std.codec.{Case, Codable, JsonCodec}
+import std.io.{IoError}
+
+/// Gives a record or enum a JSON codec, so it can be sent and read as a JSON body. Every
+/// field's type must be encodable too: a built-in type, a backed enum, or a type with its
+/// own `@json`. A type whose construction is private must supply its own decoder, so
+/// decoding can't skip its validation.
+///
+/// A field maps to the key with exactly its name, unless `keys` sets a naming policy for the
+/// whole type or `key` renames one field.
+///
+/// ```
+/// @json(keys: Case.Snake)
+/// record QuoteRequest {
+/// 	postcode: String
+/// 	weightGrams: Int
+/// }
+/// ```
+///
+/// An enum with payloads is written as an object: the key `"type"` holds the variant's name,
+/// and the payload's fields sit beside it. A variant without a payload is an object too, so
+/// a field can be added to it later. `EmailJob.ConfirmEmail(userId: 7)` is written as
+/// `{"type": "ConfirmEmail", "userId": 7}`, and `Event.SignUpSubmitted` as
+/// `{"type": "SignUpSubmitted"}`. A variant marked `from` has no fields to write, so a
+/// `@json` enum can't have one.
+///
+/// ```
+/// @json(variants: Case.Snake)
+/// enum Event {
+/// 	OrderPlaced(orderId: Int)
+/// 	SignUpSubmitted
+/// }
+/// ```
+pub attribute json implements Codable<JsonCodec> {
+	/// On a type: how every field name becomes a key. Without it, keys are the field names.
+	keys: Case? = null
+
+	/// On a field: the key to use instead of the field's name.
+	key: String? = null
+
+	/// On an enum with payloads: the key that holds the variant's name. No field may be
+	/// written under the same key.
+	tag: String = "type"
+
+	/// On an enum with payloads: how each variant's name is written. Without it, it's the
+	/// name as declared, `OrderPlaced`; with `Case.Snake`, it's `order_placed`.
+	variants: Case? = null
+}
+
+/// Writes a value as compact JSON, in UTF-8.
+///
+/// ```
+/// try out.write(json.encode(["sku": "TEA-01", "name": "Tea"]))
+/// ```
+pub fn encode<T: Codable<JsonCodec>>(value: T) -> Bytes
+
+/// Reads one JSON value as a `T`. Nesting deeper than `depthLimit` levels stops it with
+/// `JsonError.TooDeep`, so hostile input can't exhaust the program; raise it only for data
+/// you trust.
+pub fn decode<T: Codable<JsonCodec>>(data: Bytes, named depthLimit: Int = 128) -> T else JsonError
+
+/// Reads a stream of JSON a value at a time, as the result is read: either one array of
+/// values, or one value per line (NDJSON). Each value must decode as `T`, and nesting deeper
+/// than `depthLimit` levels stops it with `JsonError.TooDeep`.
+///
+/// ```
+/// for order in try json.decodeEach<OrderImport>(req.body.stream()) {
+/// 	try orders.add(order)
+/// }
+/// ```
+pub fn decodeEach<T: Codable<JsonCodec>>(
+	source: Iterable<Bytes, IoError>,
+	named depthLimit: Int = 128,
+) -> Iterable<T, JsonError>
+
+/// Reads a stream of JSON as the tokens it's made of, for data too large or too irregular to
+/// decode into records. Nesting deeper than `depthLimit` levels stops it with
+/// `JsonError.TooDeep`.
+pub fn events(source: Iterable<Bytes, IoError>, named depthLimit: Int = 128) -> Iterable<JsonEvent, JsonError>
+
+/// One token of a JSON stream, from `json.events`.
+pub enum JsonEvent {
+	StartObject
+	EndObject
+	StartArray
+	EndArray
+
+	/// An object's key; its value comes next.
+	Key(name: String)
+
+	Text(value: String)
+	Number(value: Decimal)
+	Boolean(value: Bool)
+	Null
+}
+
+/// Why a stream of JSON couldn't be read.
+pub enum JsonError implements Error {
+	/// The stream being read failed.
+	Io(from IoError)
+
+	/// The bytes aren't valid JSON.
+	Malformed(line: Int, column: Int, reason: String)
+
+	/// A value is valid JSON but doesn't decode as the type asked for. That includes an enum's
+	/// object whose tag is missing or names no variant: `path` ends with the tag's key, and
+	/// `reason` quotes the name it found.
+	Field(path: String, reason: String)
+
+	/// The data nests deeper than `limit`, the call's `depthLimit`.
+	TooDeep(limit: Int)
+
+	override get message: String
+}

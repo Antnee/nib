@@ -1,0 +1,7 @@
+// expect: error: `Password` has no member `length`
+@sensitive
+type Password: private String
+
+fn size(password: Password) -> Int {
+	return password.length
+}

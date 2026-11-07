@@ -1,0 +1,4 @@
+// expect: error: only a `named` parameter can have a default
+fn greet(name: String = "you") -> String {
+	return "Hello, ${name}"
+}

@@ -1,0 +1,8 @@
+// expect: warning: a bare `true` or `false` at a call doesn't say what it means: make it `named loud: Bool`, so calls say `loud: true`
+fn greet(name: String, loud: Bool) -> String {
+	return loud ? name.toUpperCase() : name
+}
+
+pub fn main() {
+	print(greet("Ann", true))
+}

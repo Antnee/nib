@@ -1,0 +1,84 @@
+import std.cache.{CacheError, Limit, RateLimit, RateLimiter}
+import std.http.{RelativeUrl, Url}
+import std.locale.{Locale}
+import std.queue.{Ack}
+import std.time.{Duration}
+import shop.core.{RepositoryError}
+import shop.users.{Accounts, EmailJob, TokenPurpose, User, UserId, UserRepository}
+
+// At most one of each every ten minutes, so the sign-up and reset forms can't flood an inbox.
+const RESET_EMAILS = Limit<UserId>(name: "reset-password", max: 1, per: Duration.of(minutes: 10))
+const ACCOUNT_EXISTS_EMAILS = Limit<UserId>(name: "account-exists", max: 1, per: Duration.of(minutes: 10))
+
+/// Turns a job into an email. Like the web handlers, it gets its dependencies, not the
+/// container.
+class EmailDelivery {
+	construct(
+		named private users: UserRepository,
+		named private accounts: Accounts,
+		named private mailer: Mailer,
+		named private limiter: RateLimiter,
+		named private baseUrl: Url,
+		named private locale: Locale,
+	) {}
+
+	/// Delivery is at least once. A retry issues a fresh token, and the earlier one stays
+	/// valid until it expires, so a duplicate email is harmless.
+	fn deliver(job: EmailJob) -> Ack else DeliveryError {
+		let found: User? = match job {
+			EmailJob.ConfirmEmail(userId:) or EmailJob.AccountExists(userId:) => try this.users.find(userId)
+			EmailJob.ResetRequested(emailKey:) => try this.users.findByEmailKey(emailKey)
+		}
+		// Deleted after the job was queued, or no account has the address. Nothing to send,
+		// and nothing to retry.
+		let user = found ?? return Ack.DONE
+
+		let limit: Limit<UserId>? = match job {
+			EmailJob.ConfirmEmail => null
+			EmailJob.ResetRequested => RESET_EMAILS
+			EmailJob.AccountExists => ACCOUNT_EXISTS_EMAILS
+		}
+		if limit is not null {
+			let allowed = try this.limiter.hit(limit, user.id)
+			if allowed is RateLimit.Limited {
+				return Ack.DONE
+			}
+		}
+
+		let message = match job {
+			EmailJob.ConfirmEmail =>
+				confirmEmail(user.email, try this.link(user.id, TokenPurpose.Confirm, path: url"confirm"), this.locale)
+			EmailJob.ResetRequested =>
+				resetPasswordEmail(
+					user.email,
+					try this.link(user.id, TokenPurpose.ResetPassword, path: url"reset-password"),
+					this.locale,
+				)
+			EmailJob.AccountExists => accountExistsEmail(user.email, signInLink: this.baseUrl.join(url"sign-in"))
+		}
+
+		try this.mailer.send(message)
+		return Ack.DONE
+	}
+
+	private fn link(
+		userId: UserId,
+		purpose: TokenPurpose,
+		named path: RelativeUrl,
+	) -> Secret<Url> else RepositoryError {
+		let token = try this.accounts.issueToken(userId, purpose)
+		return this.baseUrl.join(path, secretQuery: ["token": token])
+	}
+}
+
+enum DeliveryError implements Error {
+	Storage(from RepositoryError)
+	Mail(from MailError)
+	Cache(from CacheError)
+
+	override get message: String => match this {
+		DeliveryError.Storage => "couldn't read or record the delivery"
+		DeliveryError.Mail => "couldn't send the email"
+		DeliveryError.Cache => "couldn't check the rate limit"
+	}
+}

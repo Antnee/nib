@@ -1,0 +1,7 @@
+// expect: only error: `ids.sum` needs its `T` to be `Numeric`, and `OrderId` isn't
+// An identity isn't a number, so a list of them has no sum.
+type OrderId: Int
+
+fn total(ids: List<OrderId>) -> Int {
+	return ids.sum()
+}

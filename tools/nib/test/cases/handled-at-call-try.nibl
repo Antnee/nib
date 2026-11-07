@@ -1,0 +1,22 @@
+// expect: only error: this `try` passes on a `FormError`, which is handled where it happens
+// A form that doesn't decode is shown again, so it never becomes an error page.
+import std.forms.{@form}
+import std.http.{Request, Response, ToResponse}
+
+@form
+record NoteForm {
+	text: String
+}
+
+enum WebError implements ToResponse {
+	Failed(from Error)
+
+	override fn toResponse() -> Response {
+		return Response.notFound()
+	}
+}
+
+fn create(req: Request) -> Response else WebError {
+	let form = try req.body.form<NoteForm>()
+	return Response.text(form.text)
+}

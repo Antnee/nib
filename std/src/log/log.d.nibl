@@ -1,0 +1,148 @@
+import std.files.{File, FileError}
+import std.time.{Instant}
+
+/// How serious an event is, from least to most.
+pub enum Level implements Comparable {
+	/// Detail for working out what the code did.
+	Debug
+
+	/// Something worth knowing happened.
+	Info
+
+	/// Something went wrong, and the program carried on.
+	Warn
+
+	/// Something failed, and someone should look at it.
+	Error
+}
+
+/// A value that can be written as a field of a log event. The compiler makes each type's log
+/// form. Most types are loggable without saying so: the standard library's, and enums and
+/// distinct types that hold only loggable values. An error's log form holds its chain of
+/// messages and its `trace`, and a `@sensitive` value is written as `[redacted]`.
+///
+/// A record or class of your own may hold personal data, such as a user's email address, so
+/// it's loggable only when it's marked `@loggable`. Log its ID instead, or mark it:
+///
+/// ```
+/// log.info("signed in", fields: ["userId": user.id])
+/// ```
+pub interface Loggable {}
+
+/// Marks a record or class as safe to write whole into a log, every field included.
+pub attribute loggable implements Loggable {}
+
+/// Writes an event at `Debug` level to the default channel. That channel is named after the
+/// package, by the last part of its name (`shop` for `antnee/shop`), or after the file for
+/// a program without a manifest (`summarise` for `summarise.nibl`). Every
+/// event carries the caller's location and the current request's ID, and `fields` add
+/// structured data.
+pub fn debug(message: String, named fields: Map<String, Loggable> = [:], @callerLocation loc: SourceLocation)
+
+/// Writes an event at `Info` level to the default channel, with any structured `fields`.
+pub fn info(message: String, named fields: Map<String, Loggable> = [:], @callerLocation loc: SourceLocation)
+
+/// Writes an event at `Warn` level to the default channel, with any structured `fields`.
+///
+/// ```
+/// log.warn("analytics event not sent", fields: ["error": err])
+/// ```
+pub fn warn(message: String, named fields: Map<String, Loggable> = [:], @callerLocation loc: SourceLocation)
+
+/// Writes an event at `Error` level to the default channel, with any structured `fields`.
+pub fn error(message: String, named fields: Map<String, Loggable> = [:], @callerLocation loc: SourceLocation)
+
+/// Writes to a named channel instead of the default one, so its events can be routed
+/// separately.
+///
+/// ```
+/// log.channel("security").info("signed in", fields: ["userId": user.id])
+/// ```
+pub fn channel(name: String) -> Logger
+
+/// Writes events to one channel. Its methods match the module's own `debug`, `info`,
+/// `warn` and `error`.
+pub class Logger {
+	/// Writes an event at `Debug` level, with any structured `fields`.
+	fn debug(message: String, named fields: Map<String, Loggable> = [:], @callerLocation loc: SourceLocation)
+
+	/// Writes an event at `Info` level, with any structured `fields`.
+	fn info(message: String, named fields: Map<String, Loggable> = [:], @callerLocation loc: SourceLocation)
+
+	/// Writes an event at `Warn` level, with any structured `fields`.
+	fn warn(message: String, named fields: Map<String, Loggable> = [:], @callerLocation loc: SourceLocation)
+
+	/// Writes an event at `Error` level, with any structured `fields`.
+	fn error(message: String, named fields: Map<String, Loggable> = [:], @callerLocation loc: SourceLocation)
+}
+
+/// Sends a channel's events at or above `minLevel` to a sink. A server's `main` returns
+/// its routes; code that logs never chooses where its events go. An event that no route
+/// takes goes to standard error as text if it's `Info` or above, and a `Debug` one is
+/// dropped, so a program shows its logs before it has any routes, and no warning or error
+/// is lost.
+///
+/// ```
+/// log.Route(channel: "shop", minLevel: log.Level.Info, sink: log.Stdout.json())
+/// ```
+pub record Route {
+	/// The channel this route takes events from.
+	channel: String
+
+	/// The least serious level sent on.
+	minLevel: Level
+
+	/// Where the events go.
+	sink: Sink
+}
+
+/// One logged event, as a sink receives it.
+pub record Event {
+	/// When it was logged.
+	at: Instant
+
+	/// How serious it is.
+	level: Level
+
+	/// The channel it was written to.
+	channel: String
+
+	/// The message passed to the log call.
+	message: String
+
+	/// The structured fields passed to the log call.
+	fields: Map<String, Loggable>
+
+	/// Where the log call is in the source.
+	location: SourceLocation
+}
+
+/// Somewhere events go: standard output, a file, or a service. Implement it to send
+/// events somewhere else.
+pub interface Sink {
+	/// Writes one event. A sink that can't deliver it handles that itself, so logging
+	/// never fails the code that logs.
+	fn write(event: Event)
+}
+
+/// Writes events to standard output.
+pub class Stdout implements Sink {
+	/// One JSON object per line, for a log collector to read.
+	static fn json() -> Stdout
+}
+
+/// Drops every event, for tests and tools whose logs nobody reads.
+pub class Discard implements Sink {
+	/// A sink that does nothing.
+	construct()
+}
+
+/// Appends events to a file, one JSON object per line.
+pub class FileSink implements Sink {
+	/// Opens `file` for appending, creating it if it doesn't exist.
+	///
+	/// ```
+	/// let sink = try log.FileSink.open(logs.file(path"security.log"))
+	/// ```
+	static fn open(file: File) -> FileSink else FileError
+}

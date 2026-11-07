@@ -1,0 +1,9 @@
+// expect: error: `count` is declared with `let`, so there's nothing to change: `use (mut …)` is for a `var`
+fn run(items: List<Int>) {
+	let count = 0
+	each(items, fn(n) use (mut count) {
+		let x = n
+	})
+}
+
+fn each(items: List<Int>, f: fn(Int) -> Void) {}

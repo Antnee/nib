@@ -1,0 +1,5 @@
+// expect: error: `@json` isn't imported: add `import std.json.{@json}`
+@json
+record Point {
+	x: Int
+}

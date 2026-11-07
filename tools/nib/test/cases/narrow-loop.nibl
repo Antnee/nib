@@ -1,0 +1,10 @@
+// expect: error: this loop assigns it, so it may be `null` again the next time round
+fn run(items: List<Int>) -> Int {
+	var name: String? = "start"
+	var total = 0
+	for n in items {
+		total += name.length
+		name = null
+	}
+	return total
+}

@@ -1,0 +1,8 @@
+// expect: error: `n` needs an `Int`: the call can fail, so give it its own `try`, since one `try` covers one call
+fn double(n: Int) -> Int else ParseError {
+	return n * 2
+}
+
+fn run(text: String) -> Int else ParseError {
+	return try double(Int.parse(text))
+}

@@ -1,0 +1,14 @@
+// expect: ok
+import std.codec.{Case}
+import std.json.{@json}
+
+@json(variants: Case.Snake, keys: Case.Snake)
+enum Event {
+	OrderPlaced(orderId: Int, typeName: String)
+	SignUpSubmitted
+}
+
+@json(tag: "kind")
+enum Shape {
+	Circle(radius: Int, type: String)
+}

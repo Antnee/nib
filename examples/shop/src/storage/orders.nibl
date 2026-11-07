@@ -1,0 +1,101 @@
+import std.codec.{Case}
+import std.db.{@db, Db}
+import std.money.{Currency}
+import shop.core.{RepositoryError}
+import shop.orders.{
+	Address,
+	Cart,
+	CartId,
+	CartLine,
+	CartRepository,
+	Inventory,
+	InventoryError,
+	NewOrder,
+	Order,
+	OrderRepository,
+	OrderStatus,
+	Sku,
+	StockCheck,
+}
+import shop.users.{UserId}
+
+class SqlCartRepository implements CartRepository {
+	construct(private db: Db) {}
+
+	override fn find(id: CartId) -> Cart? else RepositoryError {
+		let row = try this.db.queryOne<CartRow>(sql"select id, owner, currency, address from carts where id = ${id}")
+			?? return null
+		let lines = try this.db.query<CartLine>(sql"""
+			select sku, name, quantity, unit_price, unit_weight_grams from cart_lines
+			where cart_id = ${id}
+			order by position
+			""")
+		return Cart(id: row.id, owner: row.owner, currency: row.currency, address: row.address, lines:)
+	}
+
+	override fn delete(id: CartId) else RepositoryError {
+		try this.db.execute(sql"delete from carts where id = ${id}")
+	}
+}
+
+/// The `carts` table's shape. A cart's lines live in their own table, so the domain `Cart`
+/// is assembled from two queries.
+@db(columns: Case.Snake)
+record CartRow {
+	id: CartId
+	owner: UserId
+	currency: Currency
+
+	/// A `jsonb` column, decoded with the JSON codec.
+	@db(json: true)
+	address: Address
+}
+
+class SqlOrderRepository implements OrderRepository {
+	construct(private db: Db) {}
+
+	override fn create(order: NewOrder) -> Order else RepositoryError {
+		// `returning *` gives back the columns the database fills in, such as the ID and number.
+		return try this.db.queryOne<Order>(sql"""
+			insert into orders (customer, status, total_amount, total_currency, placed_at)
+			values (
+				${order.customer}, ${OrderStatus.Pending}, ${order.total.amount}, ${order.total.currency},
+				${order.placedAt}
+			)
+			returning *
+			""")
+			?? panic("an insert returns its row")
+	}
+
+	override fn save(order: Order) else RepositoryError {
+		try this.db.execute(sql"""
+			update orders
+			set status = ${order.status}, payment_id = ${order.paymentId}
+			where id = ${order.id}
+			""")
+	}
+
+	// Rows are fetched as the caller reads them, so a long order history never has to fit in
+	// memory.
+	override fn forCustomer(customer: UserId) -> Iterable<Order, RepositoryError> {
+		let rows = this.db.rows<Order>(sql"""
+			select * from orders where customer = ${customer} order by placed_at desc
+			""")
+		for order in try rows {
+			yield order
+		}
+	}
+}
+
+class SqlInventory implements Inventory {
+	construct(private db: Db) {}
+
+	override fn check(sku: Sku, quantity: Int) -> StockCheck else InventoryError {
+		// `from` conversions don't chain (DbError → RepositoryError → InventoryError), so this
+		// one is wrapped by hand.
+		let available = this.db
+			.scalar<Int>(sql"select coalesce(sum(on_hand), 0) from stock where sku = ${sku}")
+			catch err { fail InventoryError.Storage(RepositoryError.Database(err)) }
+		return StockCheck(sku:, requested: quantity, available:)
+	}
+}

@@ -1,0 +1,28 @@
+// expect: ok
+enum Shape {
+	Circle(radius: Decimal)
+	Rectangle(width: Decimal, height: Decimal)
+}
+
+enum Reading {
+	Value(Decimal)
+	Missing
+}
+
+fn describe(shape: Shape, reading: Reading) -> String {
+	let size = match shape {
+		Shape.Circle(radius:) => "radius ${radius}"
+		Shape.Rectangle(width: 0) => "a line"
+		Shape.Rectangle(width: w, height: h) => "${w} by ${h}"
+	}
+	let value = match reading {
+		Reading.Value(n) => "${n}"
+		Reading.Missing => "no reading"
+	}
+	let wide = shape is Shape.Rectangle(width:) and width > 10
+	return "${size}, ${value}${wide ? ", wide" : ""}"
+}
+
+fn read(text: String) -> Reading {
+	return text.isEmpty ? Reading.Missing : Reading.Value(3.5)
+}

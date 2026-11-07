@@ -1,0 +1,4 @@
+// expect: error: `+` needs both sides to be one type, but this is an `Int` and a `Decimal`: convert one, as `.toDecimal()`
+fn run(count: Int, price: Decimal) -> Decimal {
+	return count + price
+}

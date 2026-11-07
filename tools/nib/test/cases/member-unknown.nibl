@@ -1,0 +1,4 @@
+// expect: error: `String` has no member `lenght`; did you mean `length`?
+fn size(name: String) -> Int {
+	return name.lenght
+}

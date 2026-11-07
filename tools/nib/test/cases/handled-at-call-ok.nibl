@@ -1,0 +1,20 @@
+// expect: ok
+// A `FormError` is caught at the call, or passed on unchanged by a function that fails with one.
+import std.forms.{@form, FormError}
+import std.http.{Request, Response, Status}
+
+@form
+record NoteForm {
+	text: String
+}
+
+fn read(req: Request) -> NoteForm else FormError {
+	return try req.body.form<NoteForm>()
+}
+
+fn create(req: Request) -> Response {
+	let form = read(req) catch err {
+		return Response.text("again: ${err.state.problems.length}", status: Status.UNPROCESSABLE_CONTENT)
+	}
+	return Response.text(form.text)
+}

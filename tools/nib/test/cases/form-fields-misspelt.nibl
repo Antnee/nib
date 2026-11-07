@@ -1,0 +1,11 @@
+// expect: only error: `SignInForm.fields` has no member `emial`; did you mean `email`?
+import std.forms.{@form, FormState}
+
+@form
+record SignInForm {
+	email: String
+}
+
+fn page(state: FormState) -> String {
+	return state.values.get(SignInForm.fields.emial) ?? ""
+}

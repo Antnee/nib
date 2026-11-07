@@ -1,0 +1,12 @@
+// expect: error: `new Greeter` implements `Greeter` but doesn't define `greet`
+interface Greeter {
+	fn greet(name: String) -> String
+}
+
+fn silent() -> Greeter {
+	return new Greeter {
+		fn wave() -> String {
+			return "o/"
+		}
+	}
+}

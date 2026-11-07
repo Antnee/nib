@@ -1,0 +1,12 @@
+// expect: only error: `new Greeter` needs `name`, which this call leaves out
+class Greeter {
+	construct(private greeting: String, private name: String) {}
+
+	fn greet() -> String {
+		return "${this.greeting}, ${this.name}"
+	}
+}
+
+fn hello() -> String {
+	return new Greeter("Hello").greet()
+}

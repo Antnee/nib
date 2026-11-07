@@ -1,0 +1,4 @@
+// expect: error: a constructor can't fail
+class Greeter {
+	construct(private greeting: String) else GreetingError {}
+}

@@ -1,0 +1,12 @@
+// expect: only error: this overload of `describe` has the same parameters as the one on line 2
+fn describe(count: Int) -> String {
+	return count.formatted()
+}
+
+fn describe(price: Decimal) -> String {
+	return price.formatted()
+}
+
+pub fn main() {
+	print(describe(3))
+}

@@ -1,0 +1,12 @@
+// expect: error: `Lookup` wraps `MissingKey`, which doesn't implement `Error`
+record MissingKey {
+	key: String
+}
+
+enum ConfigProblem implements Error {
+	Lookup(from MissingKey)
+
+	override get message: String => match this {
+		Lookup(_) => "a setting is missing"
+	}
+}

@@ -1,0 +1,6 @@
+// expect: error: `Response` has no static member `htm`; did you mean `html`?
+import std.http.{Request, Response}
+
+fn page(req: Request) -> Response {
+	return Response.htm("hello")
+}

@@ -1,0 +1,248 @@
+import std.cache.{Limit, RateLimit, RateLimiter}
+import std.crypto.{Token, TokenHash}
+import std.forms.{FormState}
+import std.html.{Html}
+import std.http.{@guard, IpAddress, Request, Response, SessionKey, Status}
+import std.log
+import std.time.{Duration}
+import shop.integrations.{Analytics, Event}
+import shop.ui with {EmailForm, PageContext, ResetPasswordForm, SignInForm, SignUpForm}
+import shop.users.{Accounts, EmailKey, LinkOutcome, SignInOutcome, User}
+
+// The token from an emailed link is kept in the session, as its hash, between the link and the
+// form that uses it. The link's page loads again without the token, so it leaves the address
+// bar after one request, and it never goes into a page.
+const CONFIRMING_EMAIL = SessionKey<TokenHash>("confirmingEmail")
+const RESETTING_PASSWORD = SessionKey<TokenHash>("resettingPassword")
+
+// Each sign-up costs a slow hash and an email, so one IP address can't send many.
+const SIGN_UPS_BY_IP = Limit<IpAddress>(name: "sign-up-ip", max: 10, per: Duration.of(hours: 1))
+
+// Each sign-up sends the address an email, whether or not it has an account, so no one can
+// fill someone's inbox from many IP addresses.
+const SIGN_UPS_BY_EMAIL = Limit<EmailKey>(name: "sign-up-email", max: 3, per: Duration.of(hours: 1))
+
+const SIGN_INS_BY_IP = Limit<IpAddress>(name: "sign-in-ip", max: 5, per: Duration.of(minutes: 1))
+
+// Guesses at one account from many addresses still meet this limit.
+const SIGN_INS_BY_EMAIL = Limit<EmailKey>(name: "sign-in-email", max: 20, per: Duration.of(hours: 1))
+
+/// Sign-up, sign-in, confirmation and password-reset pages. Its fields list exactly what
+/// these handlers use; none of them can reach anything else in the container.
+class AuthHandlers {
+	construct(
+		named private accounts: Accounts,
+		named private limiter: RateLimiter,
+		named private analytics: Analytics,
+	) {}
+
+	fn showSignUp(@guard page: PageContext) -> Response {
+		return Response.html(ui.signUpPage(page, FormState.EMPTY))
+	}
+
+	fn signUp(req: Request, @guard page: PageContext) -> Response else WebError {
+		let fromThisIp = try this.limiter.hit(SIGN_UPS_BY_IP, req.clientIp)
+		if fromThisIp is RateLimit.Limited(retryAfter:) {
+			let wait = retryAfter.formatted(locale: page.locale)
+			let message = "Too many sign-ups from here. Try again in ${wait}."
+			let body = ui.signUpPage(page, FormState.EMPTY.explaining(SignUpForm.fields.email, text: message))
+			return this.limited(body, retryAfter)
+		}
+		let form = req.body.form<SignUpForm>() catch err {
+			return this.showAgain(ui.signUpPage(page, err.state))
+		}
+		if not form.password.matches(form.confirmPassword) {
+			let state = FormState.of(form)
+				.explaining(SignUpForm.fields.confirmPassword, text: "The passwords don't match.")
+			return this.showAgain(ui.signUpPage(page, state))
+		}
+
+		// Counted by the address's key, so the cache never holds the address.
+		let key = try this.accounts.emailKey(form.email)
+		let forThisAddress = try this.limiter.hit(SIGN_UPS_BY_EMAIL, key)
+		if forThisAddress is RateLimit.Limited(retryAfter:) {
+			let wait = retryAfter.formatted(locale: page.locale)
+			let message = "Too many sign-ups for this address. Try again in ${wait}."
+			let body = ui.signUpPage(page, FormState.of(form).explaining(SignUpForm.fields.email, text: message))
+			return this.limited(body, retryAfter)
+		}
+
+		try this.accounts.signUp(form.email, form.password)
+
+		// The same page whether or not the address already had an account.
+		return Response.redirect(url"/sign-up/check-email").onSent(fn() {
+			this.analytics.track(Event.SignUpSubmitted) catch err {
+				log.warn("analytics event not sent", fields: ["error": err])
+			}
+		})
+	}
+
+	fn showCheckEmail(@guard page: PageContext) -> Response {
+		let message = "We've sent you an email. Follow the link in it to confirm your address."
+		return Response.html(ui.messagePage(page, title: "Check your email", message:))
+	}
+
+	fn showConfirmEmail(req: Request, @guard page: PageContext) -> Response {
+		let text = req.query.get("token")
+		if text is not null {
+			let token = Token.parse(text) catch _ {
+				return this.confirmationLinkExpired(page)
+			}
+			req.session.put(CONFIRMING_EMAIL, token.hash)
+			return Response.redirect(url"/confirm")
+		}
+		if req.session.get(CONFIRMING_EMAIL) is null {
+			return this.confirmationLinkExpired(page)
+		}
+		return Response.html(ui.confirmEmailPage(page))
+	}
+
+	fn confirmEmail(req: Request, @guard page: PageContext) -> Response else WebError {
+		let hash = req.session.get(CONFIRMING_EMAIL) ?? return this.confirmationLinkExpired(page)
+		let outcome = try this.accounts.confirmEmail(hash)
+		req.session.remove(CONFIRMING_EMAIL)
+		if outcome is LinkOutcome.InvalidOrExpired {
+			return this.confirmationLinkExpired(page)
+		}
+		req.session.flash(NOTICE, "Your email address is confirmed. You can sign in now.")
+		return Response.redirect(url"/sign-in")
+	}
+
+	fn showSignIn(@guard page: PageContext) -> Response {
+		return Response.html(ui.signInPage(page, FormState.EMPTY))
+	}
+
+	fn signIn(req: Request, @guard page: PageContext) -> Response else WebError {
+		// Counted before the form is read, so a malformed attempt counts too.
+		let fromThisIp = try this.limiter.hit(SIGN_INS_BY_IP, req.clientIp)
+		if fromThisIp is RateLimit.Limited(retryAfter:) {
+			return this.tooManyAttempts(page, FormState.EMPTY, retryAfter)
+		}
+		let form = req.body.form<SignInForm>() catch err {
+			return this.showAgain(ui.signInPage(page, err.state))
+		}
+		// Counted for every address typed, so it doesn't reveal which have accounts, and by the
+		// address's key, so the cache never holds the address.
+		let key = try this.accounts.emailKey(form.email)
+		let forThisAddress = try this.limiter.hit(SIGN_INS_BY_EMAIL, key)
+		if forThisAddress is RateLimit.Limited(retryAfter:) {
+			return this.tooManyAttempts(page, FormState.of(form), retryAfter)
+		}
+
+		let outcome = try this.accounts.signIn(form.email, form.password)
+		let message = match outcome {
+			SignInOutcome.SignedIn(user:) => return this.startSession(req, user)
+			SignInOutcome.InvalidCredentials => "That email and password don't match."
+			SignInOutcome.Unconfirmed => this.unconfirmed(req)
+		}
+		let state = FormState.of(form).explaining(SignInForm.fields.email, text: message)
+		return this.showAgain(ui.signInPage(page, state))
+	}
+
+	fn signOut(req: Request) -> Response {
+		req.session.destroy()
+		return Response.redirect(url"/")
+	}
+
+	fn showForgotPassword(@guard page: PageContext) -> Response {
+		return Response.html(ui.forgotPasswordPage(page, FormState.EMPTY))
+	}
+
+	fn requestPasswordReset(req: Request, @guard page: PageContext) -> Response else WebError {
+		let form = req.body.form<EmailForm>() catch err {
+			return this.showAgain(ui.forgotPasswordPage(page, err.state))
+		}
+
+		// The same answer, after the same work, whether or not the address has an account: the
+		// email job looks the account up.
+		try this.accounts.requestPasswordReset(form.email)
+		let message = "If that address has an account, we've sent it a link to reset the password."
+		return Response.html(ui.messagePage(page, title: "Check your email", message:))
+	}
+
+	fn showResetPassword(req: Request, @guard page: PageContext) -> Response {
+		let text = req.query.get("token")
+		if text is not null {
+			let token = Token.parse(text) catch _ {
+				return this.resetLinkExpired(page)
+			}
+			req.session.put(RESETTING_PASSWORD, token.hash)
+			return Response.redirect(url"/reset-password")
+		}
+		if req.session.get(RESETTING_PASSWORD) is null {
+			return this.resetLinkExpired(page)
+		}
+		return Response.html(ui.resetPasswordPage(page, FormState.EMPTY))
+	}
+
+	fn resetPassword(req: Request, @guard page: PageContext) -> Response else WebError {
+		let hash = req.session.get(RESETTING_PASSWORD) ?? return this.resetLinkExpired(page)
+		let form = req.body.form<ResetPasswordForm>() catch err {
+			return this.showAgain(ui.resetPasswordPage(page, err.state))
+		}
+		if not form.password.matches(form.confirmPassword) {
+			let state = FormState.of(form)
+				.explaining(ResetPasswordForm.fields.confirmPassword, text: "The passwords don't match.")
+			return this.showAgain(ui.resetPasswordPage(page, state))
+		}
+
+		let outcome = try this.accounts.resetPassword(hash, form.password)
+		req.session.remove(RESETTING_PASSWORD)
+		if outcome is LinkOutcome.InvalidOrExpired {
+			return this.resetLinkExpired(page)
+		}
+		req.session.flash(NOTICE, "Your password has been changed. Sign in with the new one.")
+		return Response.redirect(url"/sign-in")
+	}
+
+	private fn startSession(req: Request, user: User) -> Response {
+		// A new session ID on sign-in prevents session fixation.
+		req.session.regenerate()
+		req.session.put(SIGNED_IN_USER, user.id)
+		req.session.put(SESSION_VERSION, user.sessionVersion)
+		log.channel("security").info("signed in", fields: ["userId": user.id, "ip": req.clientIp])
+		return Response.redirect(url"/")
+	}
+
+	/// What to tell someone who signs in before confirming their address.
+	private fn unconfirmed(req: Request) -> String {
+		log.channel("security").info("sign-in before confirming", fields: ["ip": req.clientIp])
+		return "Confirm your email address first, using the link in the email we sent you."
+	}
+
+	/// A page refused by a rate limit. `Retry-After` tells a script when to try again; the
+	/// page tells a person.
+	private fn limited(body: Html, retryAfter: Duration) -> Response {
+		let response = Response.html(body, status: Status.TOO_MANY_REQUESTS)
+		return response.withHeader("Retry-After", "${retryAfter.inSeconds}")
+	}
+
+	/// A form shown again because of what was sent in it, with what's wrong.
+	private fn showAgain(form: Html) -> Response {
+		return Response.html(form, status: Status.UNPROCESSABLE_CONTENT)
+	}
+
+	private fn tooManyAttempts(page: PageContext, state: FormState, retryAfter: Duration) -> Response {
+		let wait = retryAfter.formatted(locale: page.locale)
+		let message = "Too many attempts. Try again in ${wait}."
+		let body = ui.signInPage(page, state.explaining(SignInForm.fields.email, text: message))
+		return this.limited(body, retryAfter)
+	}
+
+	/// For a confirmation link that was mangled, has expired or has been used.
+	private fn confirmationLinkExpired(page: PageContext) -> Response {
+		return this.linkExpired(page, next: "Sign in and we'll send a new one.")
+	}
+
+	/// For a reset link that was mangled, has expired or has been used.
+	private fn resetLinkExpired(page: PageContext) -> Response {
+		return this.linkExpired(page, next: "Ask for a new one.")
+	}
+
+	/// `next` says what to do instead.
+	private fn linkExpired(page: PageContext, named next: String) -> Response {
+		let message = "That link has expired or has already been used. ${next}"
+		let body = ui.messagePage(page, title: "Link expired", message:)
+		return Response.html(body, status: Status.GONE)
+	}
+}

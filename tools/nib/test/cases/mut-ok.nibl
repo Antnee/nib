@@ -1,0 +1,28 @@
+// expect: ok
+record Tally {
+	var count: Int
+
+	mut fn add(n: Int) {
+		this.count += n
+	}
+}
+
+class Counter {
+	private var count: Int = 0
+	private var seen: List<Int> = []
+
+
+	fn increment() {
+		this.count++
+		this.seen.push(this.count)
+	}
+}
+
+fn run() {
+	var tally = Tally(count: 0)
+	tally.add(2)
+	var names = ["ann"]
+	names.push("bob")
+	let counter = new Counter()
+	counter.increment()
+}

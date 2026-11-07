@@ -1,0 +1,22 @@
+// expect: error: `Line` has no member `quantty`; did you mean `quantity`?
+type Sku: String
+
+record Line {
+	sku: Sku
+	quantity: Int
+	isShort: Bool
+}
+
+enum QuoteError implements Error {
+	Unavailable
+
+	override get message: String => "no quote"
+}
+
+fn quote(line: Line) -> Int else QuoteError {
+	return line.quantity
+}
+
+fn run(lines: List<Line>) -> List<Int> {
+	return lines.map(fn(l) => l.quantty)
+}

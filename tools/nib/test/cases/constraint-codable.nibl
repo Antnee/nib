@@ -1,0 +1,21 @@
+// expect: error: `send` needs its `T` to be `Codable<JsonCodec>`, and `Secret` isn't: mark `Secret` `@json` to make it one
+import std.codec.{Codable}
+import std.json.{@json}
+import std.codec.{JsonCodec}
+
+@json
+record Public {
+	name: String
+}
+
+record Secret {
+	hash: String
+}
+
+fn send<T: Codable<JsonCodec>>(value: T) {}
+
+fn run(p: Public, s: Secret, tags: List<String>) {
+	send(p)
+	send(tags)
+	send(s)
+}

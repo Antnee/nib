@@ -1,0 +1,4 @@
+// expect: error: must be PascalCase
+record user_account {
+	id: Int
+}

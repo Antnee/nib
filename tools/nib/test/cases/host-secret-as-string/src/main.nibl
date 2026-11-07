@@ -1,0 +1,5 @@
+import std.app.{Env}
+
+pub fn main(env: Env) -> Void else Error {
+	print(try env.string("API_KEY"))
+}

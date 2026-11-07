@@ -1,0 +1,13 @@
+// expect: error: `owner` is a `Person`, which `@json` can't write or read: mark `Person` `@json` too, or store something it can write
+import std.json.{@json}
+
+record Person {
+	name: String
+}
+
+@json
+record Note {
+	text: String
+	writtenAt: Instant?
+	owner: Person
+}

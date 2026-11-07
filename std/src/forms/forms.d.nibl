@@ -1,0 +1,101 @@
+import std.codec.{Codable, FormCodec}
+
+/// Marks a record as a form, so `req.body.form<T>()` and `req.query.form<T>()` can build it
+/// from submitted fields. Each field is built through its type's `Parseable` implementation,
+/// and every field type must be form-decodable (a built-in scalar, a backed enum, a
+/// `Parseable` type, `T?`, or `List<T>` of these), which is checked at compile time.
+///
+/// A field whose text is empty or only spaces counts as not submitted: it's `Missing`, or
+/// `null` for a `T?`, or its default if it has one. The text itself is never changed, so a
+/// `String` keeps its spaces, as a `<textarea>` of pasted code needs. A field's type decides
+/// whether to trim, in its `parse`: an email address should, and a password never should.
+///
+/// A `Bool` field reads `"1"`, `"true"` or `"on"` as true and `"0"` or `"false"` as false; a
+/// missing checkbox takes the field's default. `@sensitive` fields are never echoed back in
+/// a `FormState`.
+///
+/// The form's fields are a schema the compiler knows: each `@form` record gets a static
+/// `fields`, with a `FormField` for each field, so code that names one is checked.
+/// `SignInForm.fields.email` is the `email` field, and a misspelt name is a compile error.
+///
+/// ```
+/// @form
+/// record SignInForm {
+/// 	email: Email
+/// 	password: Password
+/// }
+/// ```
+pub attribute form implements Codable<FormCodec> {}
+
+/// One field of a `@form` record, as `SignInForm.fields.email` gives it. A page uses one to
+/// name an input and to show its value and problem; a handler uses one to explain a problem.
+/// Its constructor is private, so a field only ever comes from a form's `fields`, never
+/// from a string.
+pub class FormField implements Equatable, Hashable {
+	private construct(form: String, name: String)
+
+	/// The name the browser submits it under, for an input's `name` attribute.
+	get name: String
+
+	/// Whether `other` is the same field of the same form.
+	override fn equals(other: FormField) -> Bool
+
+	/// A hash of the form and the field's name.
+	override fn hash() -> Int
+}
+
+/// What's wrong with one field of a submitted form. It says what went wrong, not how to
+/// say it: the page that shows the form chooses the words, in the person's language. An
+/// error's `message` is written for logs and is never shown to people.
+pub enum FieldProblem {
+	/// The field wasn't submitted, or its text was empty or only spaces, and it has no
+	/// default.
+	Missing
+
+	/// The field's text didn't parse as its type. `cause` says why, for logs.
+	Invalid(cause: Error)
+
+	/// A problem the handler found after decoding, such as a wrong password, with the text
+	/// it chose to show.
+	Explained(text: String)
+}
+
+/// Reading a form that doesn't decode fails with one. Its `state` holds what was submitted
+/// and the problem with each field, for showing the form again. It's `HandledAtCall`, so
+/// it's caught where the form is read, never passed on with `try`.
+///
+/// ```
+/// let form = req.body.form<SignInForm>() catch err {
+/// 	return Response.html(signInPage(err.state), status: Status.UNPROCESSABLE_CONTENT)
+/// }
+/// ```
+pub record FormError implements HandledAtCall {
+	/// What was submitted and what's wrong with it.
+	get state: FormState
+
+	/// For logs: which fields have problems, never their values or the text a page shows.
+	override get message: String
+}
+
+/// The submitted values of a form and the problem with each field, for showing the form: empty
+/// before it's submitted, and from a `FormError` or `of(form)` after. The values of
+/// `@sensitive` fields, such as passwords, are never kept.
+pub record FormState {
+	/// The submitted value of each field that had one. `@sensitive` fields are left out.
+	values: Map<FormField, String>
+
+	/// The problem with each field that has one.
+	problems: Map<FormField, FieldProblem>
+
+	/// A form that hasn't been submitted: no values and no problems.
+	const EMPTY: FormState = FormState(values: [:], problems: [:])
+
+	/// A decoded form's values, with no problems, for reporting one found after it decoded.
+	/// Fields marked `@sensitive`, such as passwords, are left out, so they're never sent
+	/// back to the browser.
+	static fn of<F: Codable<FormCodec>>(form: F) -> FormState
+
+	/// A copy with `text` explaining what's wrong with `field`, replacing any earlier
+	/// problem with it.
+	fn explaining(field: FormField, named text: String) -> FormState
+}

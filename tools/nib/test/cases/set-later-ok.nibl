@@ -1,0 +1,46 @@
+// expect: ok
+enum SignInError implements Error {
+	InvalidCredentials
+	Unconfirmed
+	Storage
+
+	override get message: String => "sign-in failed"
+}
+
+fn explain(err: SignInError, named verbose: Bool) -> String else SignInError {
+	let message: String
+	match err {
+		SignInError.InvalidCredentials => message = "wrong password"
+		SignInError.Unconfirmed => {
+			print("unconfirmed")
+			message = "confirm first"
+		}
+		SignInError.Storage => fail err
+	}
+	let suffix: String
+	if verbose {
+		suffix = " (details)"
+	} else {
+		suffix = ""
+	}
+	return "${message}${suffix}"
+}
+
+fn respond(err: SignInError) -> String {
+	match err {
+		SignInError.InvalidCredentials => return "wrong password"
+		SignInError.Unconfirmed => {
+			print("unconfirmed")
+			return "confirm first"
+		}
+		SignInError.Storage => return "try again"
+	}
+}
+
+fn nickname(name: String?) -> String {
+	let chosen = name ?? {
+		print("no name")
+		return "anonymous"
+	}
+	return chosen
+}

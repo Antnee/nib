@@ -1,0 +1,8 @@
+// expect: error: `with` lists the changed fields in brackets: `point with (x: 5)`
+record Point {
+	x: Int
+}
+
+fn moved(p: Point) -> Point {
+	return p with { x: 5 }
+}

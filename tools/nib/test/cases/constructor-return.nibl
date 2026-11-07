@@ -1,0 +1,8 @@
+// expect: only error: a constructor ends where its body ends, so it has no `return`
+class Greeter {
+	construct(private greeting: String) {
+		if greeting == "" {
+			return
+		}
+	}
+}

@@ -1,0 +1,8 @@
+// expect: error: `this` is only available
+record Counter {
+	n: Int
+
+	static fn zero() -> Int {
+		return this.n
+	}
+}

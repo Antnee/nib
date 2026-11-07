@@ -1,0 +1,7 @@
+import std.app.{Env}
+
+pub fn main(env: Env) -> Void else Error {
+	let port = try env.int("PORT")
+	let text = try env.string("PORT")
+	print("${port} ${text}")
+}

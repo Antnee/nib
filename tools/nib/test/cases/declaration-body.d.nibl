@@ -1,0 +1,6 @@
+// expect: error: a declaration file has signatures only
+pub record Circle {
+	radius: Decimal
+
+	get diameter: Decimal => this.radius * 2
+}

@@ -1,0 +1,27 @@
+// expect: ok
+import std.app.{Env}
+import std.crypto.passwords.{PasswordHash}
+import std.crypto.passwords
+import std.http.{ApiClient, Url}
+import std.log
+
+@sensitive
+type Password: private String
+
+fn store(password: Password) -> PasswordHash {
+	return passwords.hash(password)
+}
+
+fn api(env: Env, base: Url, key: Secret) -> ApiClient {
+	let auth: Secret = secret"Bearer ${key}"
+	log.info("connecting", fields: ["key": key])
+	return env.http.client(base:, authorization: auth)
+}
+
+fn check(sent: Secret, key: Secret) -> Bool {
+	return sent == key
+}
+
+fn handOver(key: Secret) -> String {
+	return key.revealed
+}

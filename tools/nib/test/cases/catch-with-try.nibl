@@ -1,0 +1,7 @@
+// expect: error: `try` passes a failure on and `catch` handles it, so a call takes one or the other
+fn quantity(text: String) -> Int else ParseError {
+	let n = try Int.parse(text) catch err {
+		return 0
+	}
+	return n
+}

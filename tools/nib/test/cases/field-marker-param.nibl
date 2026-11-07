@@ -1,0 +1,4 @@
+// expect: error: only a class's constructor declares fields with its parameters, so `private` doesn't belong on a parameter
+fn greet(private name: String) -> String {
+	return name
+}

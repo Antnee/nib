@@ -1,0 +1,9 @@
+// expect: only error: `this.name` is already set here, and it isn't a `var`, so the constructor sets it once
+class Greeter {
+	construct(greeting: String) {
+		this.name = greeting
+		this.name = "${greeting}!"
+	}
+
+	name: String
+}

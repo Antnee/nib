@@ -1,0 +1,6 @@
+# expect: ok
+[package]
+name = "demo"
+
+[files.assets]
+path = "assets"

@@ -1,0 +1,88 @@
+import std.money.{Money}
+import shop.core.{RepositoryError}
+
+// The outside services checkout depends on. The domain owns these interfaces; the adapters
+// in `shop.integrations` and `shop.storage` implement them.
+
+interface ShippingRates {
+	fn quote(to: Address, weightGrams: Int) -> Money else ShippingError
+}
+
+interface TaxRates {
+	fn calculate(to: Address, subtotal: Money) -> Money else TaxError
+}
+
+interface Inventory {
+	fn check(sku: Sku, quantity: Int) -> StockCheck else InventoryError
+}
+
+interface PaymentGateway {
+	/// Charges once per idempotency key, so retrying after a timeout can't charge twice.
+	fn charge(token: PaymentToken, amount: Money, named idempotencyKey: String) -> Payment else PaymentError
+
+	/// Refunds a charge in full. The compensating action for `charge` (see `CheckoutService`).
+	fn refund(payment: PaymentId, named idempotencyKey: String) else PaymentError
+}
+
+record StockCheck {
+	sku: Sku
+	requested: Int
+	available: Int
+
+	get isShort: Bool => this.available < this.requested
+}
+
+/// A card tokenised in the browser by the payment provider. We never see card numbers.
+type PaymentToken: String
+
+record Payment {
+	id: PaymentId
+}
+
+// The domain's error types describe what went wrong in its own terms. Adapters translate
+// HTTP, JSON and vendor errors into these, so `shop.orders` never imports `std.http`.
+
+enum ShippingError implements Error {
+	/// The rates service gave no usable answer. The cause says why, for the logs.
+	Unavailable(cause: Error)
+
+	override get message: String => "shipping rates are unavailable"
+
+	override get cause: Error? => match this {
+		ShippingError.Unavailable(cause:) => cause
+	}
+}
+
+enum TaxError implements Error {
+	UnsupportedCountry(country: String)
+
+	override get message: String => match this {
+		TaxError.UnsupportedCountry(country:) => "no tax rates for ${country}"
+	}
+}
+
+enum InventoryError implements Error {
+	Storage(from RepositoryError)
+
+	override get message: String => "couldn't read stock levels"
+}
+
+enum PaymentError implements Error {
+	/// A definite refusal: nothing was charged. `reason` is the provider's, for logs; it
+	/// isn't written for customers.
+	Declined(reason: String)
+
+	/// No answer, or an error we couldn't interpret. The charge may or may not have gone
+	/// through; only reconciliation can tell. The cause says why, for the logs.
+	Unavailable(cause: Error)
+
+	override get message: String => match this {
+		PaymentError.Declined(reason:) => "card declined: ${reason}"
+		PaymentError.Unavailable => "no usable answer from the payment provider"
+	}
+
+	override get cause: Error? => match this {
+		PaymentError.Declined => null
+		PaymentError.Unavailable(cause:) => cause
+	}
+}

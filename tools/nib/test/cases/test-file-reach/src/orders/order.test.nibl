@@ -1,0 +1,6 @@
+import reach.users
+
+// Another module's test helper is visible to tests.
+test "an order has a customer" {
+	expect users.testUser().name == "Ann"
+}

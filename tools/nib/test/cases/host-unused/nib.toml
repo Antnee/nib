@@ -1,0 +1,6 @@
+# expect: warning: `PORT` is declared in [config] but never read
+[package]
+name = "demo"
+
+[config]
+PORT = {}

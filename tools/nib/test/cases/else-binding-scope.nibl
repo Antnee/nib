@@ -1,0 +1,12 @@
+// expect: error: unknown name `err`
+fn g() -> Int else String {
+	fail "no"
+}
+
+fn f() -> Int {
+	let n = g() catch err {
+		return 0
+	}
+	print("${err}")
+	return n
+}

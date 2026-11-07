@@ -1,0 +1,18 @@
+// Hello world, web version.
+//
+//   nib run examples/hello/web.nibl
+//   curl "http://localhost:8080/?name=Anthony"
+
+import std.app.{App, Env}
+import std.http.{Request, Response}
+
+// Runs once per process. Returns the app's configuration as data.
+pub fn main(env: Env) -> App {
+	return App(http: hello)
+}
+
+// Runs once per request.
+fn hello(req: Request) -> Response {
+	let name = req.query.get("name") ?? "world"
+	return Response.html(html"<h1>Hello, ${name}!</h1>")
+}

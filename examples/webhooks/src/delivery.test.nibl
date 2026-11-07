@@ -1,0 +1,79 @@
+import std.db.{DbError}
+import std.http.{HttpError, Status, Url}
+import std.queue.{Ack}
+import std.testing.{FakeClock}
+import std.time.{Instant}
+
+const SUBSCRIPTION = SubscriptionId(7)
+
+fn job() -> WebhookJob {
+	return WebhookJob(subscriptionId: SUBSCRIPTION, event: Event(
+		id: EventId("evt_1"),
+		type: "order.paid",
+		occurredAt: Instant.parse("2026-09-22T08:59:00Z").orPanic("a fixed instant"),
+		data: ["order": "1001"],
+	))
+}
+
+record SentRequest {
+	endpoint: Url
+	body: Bytes
+	headers: Map<String, String>
+}
+
+/// Answers every request with one status, and keeps the requests for the test to check.
+class RecordingTransport implements Transport {
+	private construct(private status: Status) {}
+
+	var requests: List<SentRequest> = []
+
+	static fn answering(status: Status) -> RecordingTransport {
+		return new RecordingTransport(status)
+	}
+
+	override fn send(endpoint: Url, body: Bytes, named headers: Map<String, String>) -> Status else HttpError {
+		this.requests.push(SentRequest(endpoint:, body:, headers:))
+		return this.status
+	}
+}
+
+fn delivery(transport: Transport, named active: Bool) -> WebhookDelivery {
+	let subscription = Subscription(id: SUBSCRIPTION, endpoint: url"https://subscriber.example/hooks", active:)
+	return new WebhookDelivery(
+		subscriptions: new Subscriptions {
+			override fn find(id: SubscriptionId) -> Subscription? else DbError {
+				return id == SUBSCRIPTION ? subscription : null
+			}
+		},
+		transport:,
+		clock: FakeClock.at(Instant.parse("2026-09-22T09:00:00Z").orPanic("a fixed instant")),
+		signingKey: secret"test-signing-key",
+	)
+}
+
+test "an event is posted to the subscriber, signed with the time it was sent" {
+	let transport = RecordingTransport.answering(Status.OK)
+	expect try delivery(transport, active: true).deliver(job()) == Ack.DONE
+	let request = transport.requests.single ?? panic("expected one request")
+	expect request.endpoint == url"https://subscriber.example/hooks"
+	expect request.headers.get("Webhook-Id") == "evt_1"
+	let signature = request.headers.get("Webhook-Signature") ?? ""
+	expect signature.startsWith("t=2026-09-22T09:00:00Z,v1=")
+}
+
+test "a busy subscriber is tried again later" {
+	let transport = RecordingTransport.answering(Status.SERVICE_UNAVAILABLE)
+	let result = delivery(transport, active: true).deliver(job())
+	expect result is Result.Err(DeliveryError.Unavailable)
+}
+
+test "a refusal isn't tried again" {
+	let transport = RecordingTransport.answering(Status.GONE)
+	expect try delivery(transport, active: true).deliver(job()) == Ack.DONE
+}
+
+test "a paused subscription is skipped without a request" {
+	let transport = RecordingTransport.answering(Status.OK)
+	expect try delivery(transport, active: false).deliver(job()) == Ack.DONE
+	expect transport.requests.isEmpty
+}

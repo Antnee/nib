@@ -1,0 +1,8 @@
+// expect: error: `width` is passed twice
+fn pad(text: String, width: Int) -> String {
+	return text.padStart(width)
+}
+
+pub fn main() {
+	print(pad("a", 2, width: 3))
+}

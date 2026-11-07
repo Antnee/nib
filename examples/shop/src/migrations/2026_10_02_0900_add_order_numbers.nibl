@@ -1,0 +1,51 @@
+import std.codec.{Case}
+import std.db.{@db, Db}
+import std.migrations.{Migration, MigrationError}
+
+/// Customer-facing order numbers (`SHOP-000123`), from their own sequence. Schema change,
+/// backfill and constraints in one migration: each statement runs immediately, so the Nib
+/// code between them sees the new column, and a failed check rolls the whole thing back.
+record AddOrderNumbers implements Migration {
+	override fn apply(db: Db) else MigrationError {
+		try db.execute(sql"create sequence order_numbers")
+		try db.execute(sql"alter table orders add column number text")
+
+		// Backfill oldest first, so existing orders get the lowest numbers. The rows are read
+		// as the loop reaches them, so a large table never has to fit in memory. The
+		// migration runs in one transaction, so the updates share the stream's connection.
+		for row in try db.rows<OrderIdRow>(sql"select id from orders order by id") {
+			let next = try db.scalar<Int>(sql"select nextval('order_numbers')")
+			try db.execute(sql"update orders set number = ${orderNumber(next)} where id = ${row.id}")
+		}
+
+		let missing = try db.scalar<Int>(sql"select count(*) from orders where number is null")
+		if missing > 0 {
+			fail MigrationError.Check(reason: "${missing} orders still have no number")
+		}
+
+		// New orders get their number from the database, so the insert in
+		// `storage.SqlOrderRepository` doesn't change. `lpad` alone would cut a seventh digit
+		// off, so the padding stops at six digits, as `orderNumber` does.
+		try db.execute(sql"""
+			create function next_order_number() returns text as $$
+				select 'SHOP-' || case when n < 1000000 then lpad(n::text, 6, '0') else n::text end
+				from nextval('order_numbers') as n
+			$$ language sql
+			""")
+		try db.execute(sql"""
+			alter table orders
+				alter column number set default next_order_number(),
+				alter column number set not null
+			""")
+		try db.execute(sql"create unique index orders_number on orders (number)")
+	}
+}
+
+@db(columns: Case.Snake)
+record OrderIdRow {
+	id: Int
+}
+
+fn orderNumber(sequence: Int) -> String {
+	return "SHOP-${sequence.formatted(width: 6, fill: "0")}"
+}

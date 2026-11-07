@@ -1,0 +1,13 @@
+// expect: only error: `this.describe` is used before the constructor sets `name`, which it could read
+class Greeter {
+	construct(greeting: String) {
+		let _ = this.describe()
+		this.name = greeting
+	}
+
+	name: String
+
+	fn describe() -> String {
+		return this.name
+	}
+}

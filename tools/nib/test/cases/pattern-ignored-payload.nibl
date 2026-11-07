@@ -1,0 +1,12 @@
+// expect: only error: `Square` on its own matches it whatever it holds, so leave out `(_)`: write `Square`
+enum Shape {
+	Circle(radius: Decimal)
+	Square(side: Decimal)
+}
+
+fn isRound(shape: Shape) -> Bool {
+	return match shape {
+		Shape.Circle => true
+		Shape.Square(_) => false
+	}
+}

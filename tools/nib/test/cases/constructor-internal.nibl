@@ -1,0 +1,16 @@
+// expect: ok
+class Mailer {
+	construct(internal from: String, private retries: Int, greeting: String) {}
+
+	fn sender() -> String {
+		return this.from
+	}
+}
+
+fn sender(mailer: Mailer) -> String {
+	return mailer.from
+}
+
+record Flags {
+	internal: Bool
+}

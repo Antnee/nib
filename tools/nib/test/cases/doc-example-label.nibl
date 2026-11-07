@@ -1,0 +1,9 @@
+// expect: error: in a doc-comment example:
+/// Greets someone.
+///
+/// ```
+/// let text = greet(person: "Ann")
+/// ```
+fn greet(name: String) -> String {
+	return "Hello, ${name}"
+}

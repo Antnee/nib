@@ -1,0 +1,115 @@
+// A small notes app, between hello world and the shop: one table, one form and one guard.
+//
+//   nib run examples/notes
+
+import std.app.{App, Env}
+import std.db.{@db, Db, DbError}
+import std.forms.{@form, FormState}
+import std.html.{Html}
+import std.http.{@guard, @path, CsrfToken, Request, Response, Route, Routes, Status, ToResponse}
+
+pub fn main(env: Env) -> App {
+	let freshServices = fn() => new Services(env.db("main"))
+	return App(http: routes().serve(freshServices))
+}
+
+fn routes() -> Routes<Services> {
+	return Routes(routes: [
+		Route.get("/", fn(app) => app.notes.index),
+		Route.post("/", fn(app) => app.notes.create),
+		// The guard finds the note in the path, so the handlers inside only ever see one that
+		// exists.
+		Route.group(prefix: "/notes/{noteId}", requiring: fn(app) => app.notes.find, routes: [
+			Route.get("", fn(app) => app.notes.show),
+		]),
+	])
+}
+
+/// A fresh one for each request.
+class Services {
+	construct(private db: Db) {}
+
+	lazy notes: NoteHandlers = new NoteHandlers(this.db)
+}
+
+type NoteId: Int
+
+@db(table: "notes")
+record Note {
+	id: NoteId
+	text: String
+}
+
+@form
+record NoteForm {
+	text: String
+}
+
+class NoteHandlers {
+	construct(private db: Db) {}
+
+	fn index(req: Request) -> Response else WebError {
+		return Response.html(notesPage(try this.all(), FormState.EMPTY, req.csrf))
+	}
+
+	fn create(req: Request) -> Response else WebError {
+		let form = req.body.form<NoteForm>() catch err {
+			// Shown again, with what was typed and what's wrong with it.
+			return Response.html(notesPage(try this.all(), err.state, req.csrf), status: Status.UNPROCESSABLE_CONTENT)
+		}
+		let id = try this.db.insertId<NoteId>(sql"insert into notes (text) values (${form.text})")
+		// Redirect after the post, so a refresh doesn't add the note twice.
+		return Response.redirect(url"/notes/${id}")
+	}
+
+	/// The guard: the note in the path, or a 404.
+	fn find(@path noteId: NoteId) -> Note else WebError {
+		let note = try this.db.queryOne<Note>(sql"select id, text from notes where id = ${noteId}")
+		return note ?? fail WebError.NotFound
+	}
+
+	fn show(@guard note: Note) -> Response {
+		return Response.html(html"""
+			<p>${note.text}</p>
+			<a href="/">All notes</a>
+			""")
+	}
+
+	private fn all() -> List<Note> else DbError {
+		return try this.db.query<Note>(sql"select id, text from notes order by id")
+	}
+}
+
+/// The form carries the CSRF token, because the router refuses a `POST` without one.
+/// A blank note counts as missing, and that's the only problem its text can have, so the
+/// page says what to do.
+fn notesPage(notes: List<Note>, state: FormState, csrf: CsrfToken) -> Html {
+	return html"""
+		<ul>${notes.map(noteItem)}</ul>
+		<form method="post">
+			${csrf.hiddenField}
+			<textarea name="${NoteForm.fields.text.name}">${state.values.get(NoteForm.fields.text) ?? ""}</textarea>
+			${state.problems.containsKey(NoteForm.fields.text) ? html"<p>Write something first.</p>" : Html.EMPTY}
+			<button>Add</button>
+		</form>
+		"""
+}
+
+fn noteItem(note: Note) -> Html {
+	return html"""
+		<li><a href="/notes/${note.id}">${note.text}</a></li>
+		"""
+}
+
+/// The router logs each failure, then sends the response `toResponse()` gives.
+enum WebError implements ToResponse {
+	Database(from DbError)
+	NotFound
+
+	override fn toResponse() -> Response {
+		return match this {
+			WebError.Database => Response.problem(status: Status.INTERNAL_SERVER_ERROR)
+			WebError.NotFound => Response.notFound()
+		}
+	}
+}

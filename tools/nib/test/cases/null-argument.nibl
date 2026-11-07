@@ -1,0 +1,6 @@
+// expect: error: this is a `String?`, but `name` needs a `String`: check it with `nick is not null` first, or give a fallback with `??`
+fn greet(name: String) {}
+
+fn run(nick: String?) {
+	greet(nick)
+}

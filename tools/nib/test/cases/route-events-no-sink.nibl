@@ -1,0 +1,21 @@
+// expect: error: `status` is an events route's handler, so it takes the `EventSink`, after the request if it reads it
+import std.http.{@path, Request, Response, Route, Routes}
+import std.time.{Duration}
+
+type OrderId: Int
+
+class Live {
+	fn status(req: Request, @path orderId: OrderId) -> Response {
+		return Response.text("order ${orderId}")
+	}
+}
+
+class Services {
+	construct(pub live: Live) {}
+}
+
+fn routes() -> Routes<Services> {
+	return Routes(routes: [
+		Route.events("/orders/{orderId}/status", fn(app) => app.live.status, timeout: Duration.of(hours: 1)),
+	])
+}

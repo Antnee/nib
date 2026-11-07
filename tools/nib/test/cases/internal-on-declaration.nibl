@@ -1,0 +1,4 @@
+// expect: error: `internal` is the default here, so leave it out: it's written only on a constructor's parameter, where leaving it out means the parameter isn't a field
+internal fn greet() -> String {
+	return "hello"
+}

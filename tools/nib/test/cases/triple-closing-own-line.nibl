@@ -1,0 +1,5 @@
+// expect: error: must be on its own line
+fn f() -> String {
+	return """
+		one"""
+}

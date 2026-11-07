@@ -1,0 +1,7 @@
+import std.db.{DbError}
+
+/// What any repository can fail with. Shared by every domain module, so the storage
+/// adapters only need one error type.
+enum RepositoryError implements Error {
+	Database(from DbError)
+}

@@ -1,0 +1,4 @@
+// expect: error: unterminated string
+fn f() -> String {
+	return "hi
+}

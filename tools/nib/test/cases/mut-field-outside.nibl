@@ -1,0 +1,9 @@
+// expect: error: only `Point`'s own methods change its fields: make a changed copy with `with (x: …)`
+record Point {
+	x: Int
+}
+
+fn move(p: Point) {
+	var q = p
+	q.x = 3
+}

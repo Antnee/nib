@@ -1,0 +1,6 @@
+// expect: error: no enclosing loop labelled `outer`
+fn f(xs: List<Int>) {
+	for x in xs {
+		break outer
+	}
+}

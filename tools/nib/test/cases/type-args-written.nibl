@@ -1,0 +1,2 @@
+// expect: error: `Map` takes 2 type arguments, but this gives 1
+fn run(index: Map<String>) {}

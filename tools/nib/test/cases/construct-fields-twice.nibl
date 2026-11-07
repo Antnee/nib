@@ -1,0 +1,6 @@
+// expect: error: `greeting` is declared by the constructor and again in the class: declare it once
+class Greeter {
+	private greeting: String
+
+	construct(private greeting: String) {}
+}

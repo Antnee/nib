@@ -1,0 +1,25 @@
+import std.crypto.{Keyring}
+import std.crypto.passwords
+import std.http.{Url}
+import std.locale.{Locale}
+import shop.mail.{SmtpSettings}
+
+/// Everything read from the environment at startup. Immutable, and shared by every unit of
+/// work. Anything fallible (a missing variable, a bad key) fails here, in `main`, so the
+/// `lazy` fields in `Services` never have to.
+record Config {
+	baseUrl: Url
+	pii: Keyring
+	passwordPolicy: passwords.Policy
+	smtp: SmtpSettings
+	stripeKey: Secret
+
+	/// Stripe's key for the browser. It's public by design, so it isn't a secret.
+	stripePublishableKey: String
+
+	shippingApi: Url
+	analyticsApi: Url
+
+	/// How pages write amounts and dates, such as `en-GB`.
+	locale: Locale
+}

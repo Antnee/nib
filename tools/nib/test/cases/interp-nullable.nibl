@@ -1,0 +1,4 @@
+// expect: error: this may be `null`, which has no text: give a fallback with `??`, or test it first
+fn greet(name: String?) -> String {
+	return "Hello, ${name}"
+}

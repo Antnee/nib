@@ -1,0 +1,4 @@
+// expect: error: this is a `String`, but `count` is declared as an `Int`
+fn run() {
+	let count: Int = "three"
+}

@@ -1,0 +1,11 @@
+// expect: warning: a block that only leaves can be written on the line: `?? return …`
+fn find(id: Int) -> String? {
+	return id > 0 ? "ann" : null
+}
+
+fn name(id: Int) -> String {
+	let found = find(id) ?? {
+		return "nobody"
+	}
+	return found
+}

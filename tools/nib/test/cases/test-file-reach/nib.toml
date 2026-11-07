@@ -1,0 +1,3 @@
+# expect: error: `testUser` is declared in a test file, so only tests can use it
+[package]
+name = "reach"

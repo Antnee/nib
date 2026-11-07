@@ -1,0 +1,4 @@
+// expect: error: use `and`
+fn f(a: Bool, b: Bool) -> Bool {
+	return a && b
+}

@@ -1,0 +1,13 @@
+#!/usr/bin/env nib
+
+// Hello world, CLI version.
+//
+//   nib run examples/hello/cli.nibl
+//   nib run examples/hello/cli.nibl Anthony
+
+import std.app.{Env}
+
+pub fn main(env: Env) {
+	let name = env.args.get(1) ?? "world"
+	print("Hello, ${name}!")
+}

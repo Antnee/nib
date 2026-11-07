@@ -1,0 +1,68 @@
+import std.db.{Db, Tx}
+import std.queue.{DurableQueue, Outbox}
+import shop.core.{RepositoryError, UnitOfWork}
+import shop.orders.{CartRepository, OrderRepository, OrdersWork}
+import shop.users.{AccountsWork, EmailJob, TokenRepository, UserRepository}
+
+// How each domain's unit of work is made atomic. Today everything is in one Postgres
+// database, so a unit of work is one transaction, and the email queue lives in the same
+// database, so publishing inside it is a transactional outbox.
+//
+// If emails move to SQS, this file and the wiring in `Services` change: `outbox` becomes a
+// table that a relay drains to SQS after commit. `Accounts` never knows.
+
+class SqlAccountsUnitOfWork implements UnitOfWork<AccountsWork> {
+	construct(private db: Db, private emails: DurableQueue<EmailJob>) {}
+
+	override fn begin() -> AccountsWork else RepositoryError {
+		return new SqlAccountsWork(try this.db.begin(), this.emails)
+	}
+}
+
+class SqlAccountsWork implements AccountsWork {
+	override users: UserRepository
+	override tokens: TokenRepository
+	override outbox: Outbox<EmailJob>
+
+	/// Every repository and the outbox share the one transaction. A `Tx` is a `Db`, so the
+	/// repositories don't know whether they're inside one.
+	construct(private tx: Tx, emails: DurableQueue<EmailJob>) {
+		this.users = new SqlUserRepository(tx)
+		this.tokens = new SqlTokenRepository(tx)
+		this.outbox = emails.within(tx)
+	}
+
+	override fn commit() else RepositoryError {
+		try this.tx.commit()
+	}
+
+	override fn rollback() {
+		this.tx.rollback()
+	}
+}
+
+class SqlOrdersUnitOfWork implements UnitOfWork<OrdersWork> {
+	construct(private db: Db) {}
+
+	override fn begin() -> OrdersWork else RepositoryError {
+		return new SqlOrdersWork(try this.db.begin())
+	}
+}
+
+class SqlOrdersWork implements OrdersWork {
+	override orders: OrderRepository
+	override carts: CartRepository
+
+	construct(private tx: Tx) {
+		this.orders = new SqlOrderRepository(tx)
+		this.carts = new SqlCartRepository(tx)
+	}
+
+	override fn commit() else RepositoryError {
+		try this.tx.commit()
+	}
+
+	override fn rollback() {
+		this.tx.rollback()
+	}
+}

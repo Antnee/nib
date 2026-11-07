@@ -1,0 +1,13 @@
+// expect: error: `Currency` has no static member `fromValu`; did you mean `fromValue`?
+enum Currency: String {
+	Gbp = "GBP"
+	Eur = "EUR"
+}
+
+fn ok(code: String) -> Currency? {
+	return Currency.fromValue(code)
+}
+
+fn typo(code: String) -> Currency? {
+	return Currency.fromValu(code)
+}

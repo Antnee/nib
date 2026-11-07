@@ -1,0 +1,6 @@
+// expect: error: `Email` wraps one value, passed without a label
+type Email: String
+
+fn make() -> Email {
+	return Email(text: "a@example.com")
+}

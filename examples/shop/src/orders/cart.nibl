@@ -1,0 +1,54 @@
+import std.codec.{Case}
+import std.db.{@db}
+import std.json.{@json}
+import std.money.{Currency, Money}
+import shop.core.{RepositoryError}
+import shop.users.{UserId}
+
+type CartId: Int
+
+type Sku: String
+
+/// A shopping cart. Every line is priced in the cart's currency, so the subtotal can't
+/// mix currencies and `subtotal()` can't fail.
+record Cart {
+	id: CartId
+	owner: UserId
+	currency: Currency
+	address: Address
+	lines: List<CartLine>
+
+	fn subtotal() -> Money {
+		return Money(amount: this.lines.map(fn(line) => line.total).sum(), currency: this.currency)
+	}
+
+	fn totalWeightGrams() -> Int {
+		return this.lines.map(fn(line) => line.weightGrams).sum()
+	}
+}
+
+@db(table: "cart_lines", columns: Case.Snake)
+record CartLine {
+	sku: Sku
+	name: String
+	quantity: Int
+	unitPrice: Decimal
+	unitWeightGrams: Int
+
+	get total: Decimal => this.unitPrice * this.quantity.toDecimal()
+	get weightGrams: Int => this.unitWeightGrams * this.quantity
+}
+
+@json
+record Address {
+	line1: String
+	line2: String? = null
+	city: String
+	postcode: String
+	country: String
+}
+
+interface CartRepository {
+	fn find(id: CartId) -> Cart? else RepositoryError
+	fn delete(id: CartId) else RepositoryError
+}

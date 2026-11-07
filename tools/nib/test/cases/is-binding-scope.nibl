@@ -1,0 +1,11 @@
+// expect: error: unknown name `user`
+record User {
+	name: String
+}
+
+fn f(maybe: User?) -> String {
+	if maybe is User user {
+		print(user.name)
+	}
+	return user.name
+}

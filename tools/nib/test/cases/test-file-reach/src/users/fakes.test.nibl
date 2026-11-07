@@ -1,0 +1,3 @@
+fn testUser() -> User {
+	return User(name: "Ann")
+}

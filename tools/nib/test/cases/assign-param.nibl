@@ -1,0 +1,5 @@
+// expect: error: `count` is a parameter, and parameters can't be assigned: copy it to a `var` if it changes
+fn run(count: Int) -> Int {
+	count = count + 1
+	return count
+}

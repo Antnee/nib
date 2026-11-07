@@ -1,0 +1,10 @@
+import std.app.{Env}
+import std.db.{Db}
+
+pub fn main(env: Env) {
+	let _ = open(env, "main")
+}
+
+fn open(env: Env, name: String) -> Db {
+	return env.db(name)
+}

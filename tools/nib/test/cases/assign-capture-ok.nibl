@@ -1,0 +1,10 @@
+// expect: ok
+fn run(items: List<Int>) -> Int {
+	var count = 0
+	each(items, fn(n) use (mut count) {
+		count += n
+	})
+	return count
+}
+
+fn each(items: List<Int>, f: fn(Int) -> Void) {}

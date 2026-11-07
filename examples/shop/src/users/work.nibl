@@ -1,0 +1,20 @@
+import std.queue.{Outbox}
+import shop.core.{RepositoryError}
+
+/// Everything one atomic piece of account work can touch. Either all of it is committed or
+/// none of it is: a confirmation email is never sent for a user who wasn't created.
+///
+/// The properties are `get` requirements: an implementation can satisfy them with stored
+/// fields. Implemented by `storage.SqlAccountsWork` and, in tests, by
+/// `InMemoryAccountsWork`.
+interface AccountsWork {
+	get users: UserRepository
+	get tokens: TokenRepository
+	get outbox: Outbox<EmailJob>
+
+	fn commit() else RepositoryError
+
+	/// Discards everything since `begin`. A no-op after `commit`, so it can always be
+	/// deferred. Infallible: if it fails, the adapter discards the connection.
+	fn rollback()
+}

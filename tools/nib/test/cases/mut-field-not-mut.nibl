@@ -1,0 +1,8 @@
+// expect: error: changing a field replaces the whole `Tally`, which only a `mut fn` can do
+record Tally {
+	count: Int
+
+	fn add(n: Int) {
+		this.count += n
+	}
+}

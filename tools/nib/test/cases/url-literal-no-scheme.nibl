@@ -1,0 +1,6 @@
+// expect: error: names a host without a scheme
+import std.http.{RelativeUrl}
+
+fn home() -> RelativeUrl {
+	return url"//shop.example/"
+}

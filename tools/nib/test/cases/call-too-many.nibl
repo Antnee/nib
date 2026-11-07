@@ -1,0 +1,8 @@
+// expect: error: `pad` takes 2 arguments, but this call passes 3
+fn pad(text: String, width: Int) -> String {
+	return text.padStart(width)
+}
+
+pub fn main() {
+	print(pad("a", 2, 3))
+}

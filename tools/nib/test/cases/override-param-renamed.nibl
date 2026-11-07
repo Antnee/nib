@@ -1,0 +1,11 @@
+// expect: only error: `Greeter.greet` calls this `named` parameter `title`, so an implementation does too
+interface Greeter {
+	fn greet(name: String, named title: String) -> String
+}
+
+record Formal implements Greeter {
+	// A positional parameter can take a name that suits the implementation.
+	override fn greet(person: String, named honorific: String) -> String {
+		return "Good day, ${honorific} ${person}"
+	}
+}

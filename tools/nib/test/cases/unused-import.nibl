@@ -1,0 +1,5 @@
+// expect: warning: `Duration` is imported but never used
+import std.time.{Duration}
+
+fn f() {
+}

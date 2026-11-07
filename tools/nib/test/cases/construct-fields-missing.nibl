@@ -1,0 +1,10 @@
+// expect: only error: the constructor never sets `name`
+class Greeter {
+	construct(private greeting: String) {}
+
+	private name: String
+
+	fn greet() -> String {
+		return "${this.greeting}, ${this.name}"
+	}
+}

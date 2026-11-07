@@ -1,0 +1,35 @@
+// Passing values between tasks in one block, such as a producer and a consumer. Between
+// instances, messages go through queues (`std.queue`).
+//
+// ```
+// let lines = Channel<String>.bounded(capacity: 100)
+// let _ = start produce(lines)
+// for line in lines {
+// 	print(line)
+// }
+// ```
+
+/// A queue of values between tasks, holding at most `capacity` at a time. `send` waits while
+/// it's full, and `receive` waits while it's empty, so a fast producer can't outrun a slow
+/// consumer. A `for` loop over a channel receives until it's closed and empty.
+pub class Channel<T> implements Iterable<T> {
+	/// A channel that holds up to `capacity` values.
+	static fn bounded(named capacity: Int) -> Channel<T>
+
+	/// Sends `value`, waiting while the channel is full. Fails if the channel is closed.
+	fn send(value: T) else ChannelError
+
+	/// The next value, waiting while the channel is empty; `null` once it's closed and empty.
+	fn receive() -> T?
+
+	/// Closes the channel: values already sent can still be received, and later sends fail.
+	fn close()
+}
+
+/// Why a value couldn't be sent.
+pub enum ChannelError implements Error {
+	/// The channel was closed.
+	Closed
+
+	override get message: String
+}

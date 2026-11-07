@@ -1,0 +1,11 @@
+// expect: ok
+// A record is built with brackets, so it needs none of its own in a condition.
+record Point {
+	x: Int
+}
+
+fn f(p: Point) {
+	if p == Point(x: 1) {
+		print("origin")
+	}
+}

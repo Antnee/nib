@@ -1,0 +1,4 @@
+// expect: error: comparisons can't be chained
+fn inRange(a: Int, b: Int, c: Int) -> Bool {
+	return a < b < c
+}

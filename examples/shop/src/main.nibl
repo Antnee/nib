@@ -1,0 +1,67 @@
+// The entry point. Runs once per process: reads configuration, fails fast if anything is
+// missing, and returns the app as data. The host then builds a fresh `Services` for every
+// request and every queue message.
+
+import std.app.{App, ConfigError, Env}
+import std.crypto.{Keyring, KeyringError}
+import std.crypto.passwords
+import std.files.{FileError}
+import std.locale.{Locale}
+import std.log
+import shop.app with {Config, Services}
+import shop.mail.{SmtpSettings}
+
+pub fn main(env: Env) -> App else StartupError {
+	let config = Config(
+		baseUrl: try env.url("BASE_URL"),
+		pii: try Keyring.parse(try env.secret("PII_KEYS")),
+		passwordPolicy: passwords.Policy.RECOMMENDED,
+		smtp: SmtpSettings(
+			host: try env.string("SMTP_HOST"),
+			port: try env.int("SMTP_PORT"),
+			username: try env.string("SMTP_USERNAME"),
+			password: try env.secret("SMTP_PASSWORD"),
+		),
+		stripeKey: try env.secret("STRIPE_KEY"),
+		stripePublishableKey: try env.string("STRIPE_PUBLISHABLE_KEY"),
+		shippingApi: try env.url("SHIPPING_API_URL"),
+		analyticsApi: try env.url("ANALYTICS_API_URL"),
+		locale: try Locale.parse(try env.string("LOCALE")),
+	)
+
+	// A directory is a capability: the manifest asks for `logs`, and each environment says
+	// where it is. Nothing opened beneath one can escape it, even through `..` or a symlink,
+	// and the app can't open files anywhere it wasn't granted.
+	let logs = try env.dir("logs")
+
+	// Not a container but a way to make one: the host calls it for every request and every
+	// queue message, so nothing built for one request is seen by the next.
+	let freshServices = fn() => new Services(env, config)
+
+	return App(
+		http: app.routes(env.files("assets")).serve(freshServices),
+		consumers: [app.emailConsumer(freshServices)],
+		logRoutes: [
+			log.Route(channel: "shop", minLevel: log.Level.Info, sink: log.Stdout.json()),
+			log.Route(
+				channel: "security",
+				minLevel: log.Level.Info,
+				sink: try log.FileSink.open(logs.file(path"security.log")),
+			),
+		],
+	)
+}
+
+enum StartupError implements Error {
+	Configuration(from ConfigError)
+	Keys(from KeyringError)
+	Logs(from FileError)
+	BadLocale(from ParseError)
+
+	override get message: String => match this {
+		StartupError.Configuration => "couldn't load the configuration"
+		StartupError.Keys => "couldn't load the PII keyring"
+		StartupError.Logs => "couldn't open the log directory or a log file"
+		StartupError.BadLocale => "LOCALE isn't a language tag, such as en-GB"
+	}
+}

@@ -1,0 +1,8 @@
+// expect: only error: `Greeter` is a class, so it's built with `new`: `new Greeter(…)`
+class Greeter {
+	construct(private greeting: String) {}
+}
+
+fn hello() -> Greeter {
+	return Greeter(greeting: "Hello")
+}

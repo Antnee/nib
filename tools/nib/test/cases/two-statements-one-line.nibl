@@ -1,0 +1,4 @@
+// expect: error: expected a new line
+fn f() {
+	let a = 1 let b = 2
+}

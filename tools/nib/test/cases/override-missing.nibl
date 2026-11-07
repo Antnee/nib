@@ -1,0 +1,12 @@
+// expect: error: `area` implements `Shape.area`, so it is marked `override`
+interface Shape {
+	fn area() -> Float
+}
+
+record Square implements Shape {
+	side: Float
+
+	fn area() -> Float {
+		return this.side * this.side
+	}
+}

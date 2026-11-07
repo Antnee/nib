@@ -1,0 +1,13 @@
+import std.db.{Db}
+import std.migrations.{Migration, MigrationError}
+
+record CreateNotes implements Migration {
+	override fn apply(db: Db) else MigrationError {
+		try db.execute(sql"""
+			create table notes (
+				id bigint primary key auto_increment,
+				text text not null
+			)
+			""")
+	}
+}

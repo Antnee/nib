@@ -1,0 +1,21 @@
+/// What the host knows about the piece of work running now: a request, a queue message or a
+/// command. The host makes one for each, and code can read it but never replace it.
+///
+/// Logging, the HTTP client, queues and the database read it themselves: a log line carries
+/// the work's ID, an outgoing call carries its trace, and a query is tagged with both. So
+/// it isn't passed from function to function, as Go's `ctx` is.
+///
+/// ```
+/// let id = context.current().id
+/// ```
+pub record Context {
+	/// The ID of this unit of work, as logs and error pages show it.
+	get id: String
+
+	/// Its W3C trace context, as an incoming `traceparent` header gave it or the host began
+	/// it. Outgoing HTTP calls send it on, so a trace follows the work across services.
+	get traceparent: String
+}
+
+/// The context of the work running now.
+pub fn current() -> Context

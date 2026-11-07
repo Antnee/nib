@@ -1,0 +1,17 @@
+// expect: only error: `Greeter` has no constructor, so `new Greeter()` takes nothing
+// A class without a constructor is built with `new Greeter()`, so it takes no arguments.
+class Greeter {
+	private greeting: String = "Hello"
+
+	fn greet() -> String {
+		return this.greeting
+	}
+}
+
+fn hello() -> String {
+	return new Greeter().greet()
+}
+
+fn welcome() -> String {
+	return new Greeter("Welcome").greet()
+}

@@ -1,0 +1,18 @@
+// expect: error: the value is used, so this block has to leave, with `return`, `fail` or `panic`
+enum LoadError implements Error {
+	Missing
+	Broken
+
+	override get message: String => "load failed"
+}
+
+fn load(path: String) -> String else LoadError {
+	return path
+}
+
+fn run() -> String {
+	let text = load("a") catch err {
+		let ignored = err
+	}
+	return text
+}

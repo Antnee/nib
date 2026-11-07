@@ -1,0 +1,7 @@
+// expect: only error: `UserId` and `OrderId` are different types, so they're never equal
+type UserId: Int
+type OrderId: Int
+
+fn same(user: UserId, order: OrderId) -> Bool {
+	return user == order
+}

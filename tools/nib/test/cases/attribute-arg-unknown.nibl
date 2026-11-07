@@ -1,0 +1,7 @@
+// expect: only error: `@retry` has no argument `time`; did you mean `times`?
+attribute retry {
+	times: Int = 3
+}
+
+@retry(time: 5)
+fn send() {}

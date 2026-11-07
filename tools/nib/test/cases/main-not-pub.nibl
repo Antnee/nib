@@ -1,0 +1,6 @@
+// expect: error: the host calls `main` from outside the package, so it is `pub`: `pub fn main(…)`
+import std.app.{Env}
+
+fn main(env: Env) {
+	print("hello")
+}

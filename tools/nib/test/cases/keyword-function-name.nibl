@@ -1,0 +1,4 @@
+// expect: error: `new` is a reserved word and can't name a function
+fn new() -> Int {
+	return 1
+}

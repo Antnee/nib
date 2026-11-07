@@ -1,0 +1,11 @@
+// expect: error: `tax` is started but never read
+interface Rates {
+	fn tax(postcode: String) -> Decimal else RateError
+}
+enum RateError implements Error {
+	Unavailable
+	override get message: String => "x"
+}
+fn forgotten(rates: Rates) -> Void else RateError {
+	let tax = start rates.tax("NG1")
+}

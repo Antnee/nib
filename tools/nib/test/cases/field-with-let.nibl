@@ -1,0 +1,4 @@
+// expect: error: without `let`
+record Point {
+	let x: Int
+}

@@ -1,0 +1,12 @@
+// expect: ok
+import std.crypto.{Keyring}
+import std.http.{Cookie, Request, Response, SameSite}
+import std.time.{Duration}
+
+fn remember(req: Request, keys: Keyring) -> Response {
+	let theme = req.cookies.get("theme") ?? "light"
+	let embed = Cookie(name: "embed", value: theme, sameSite: SameSite.None)
+	let signedIn = Cookie.signed(name: "remember", value: "7", keyring: keys, maxAge: Duration.of(days: 30))
+	let userId = req.cookies.verified("remember", keyring: keys)
+	return Response.redirect(url"/").withCookie(embed).withCookie(signedIn).withCookieRemoved("old")
+}

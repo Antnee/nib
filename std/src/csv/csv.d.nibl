@@ -1,0 +1,75 @@
+import std.codec.{Case, Codable, CsvCodec}
+import std.io.{IoError}
+
+/// Writes records as UTF-8 CSV, with a header row of column names. The record type must
+/// be marked `@csv`, and every field must be a type CSV can hold, which the compiler
+/// checks.
+///
+/// ```
+/// let bytes = csv.encode(rows)
+/// ```
+pub fn encode<T: Codable<CsvCodec>>(rows: List<T>) -> Bytes
+
+/// Reads UTF-8 CSV with a header row into records, matching columns by name.
+pub fn decode<T: Codable<CsvCodec>>(data: Bytes) -> List<T> else CsvError
+
+/// Reads a stream of UTF-8 CSV with a header row, a record at a time as the result is read,
+/// so a large file never has to fit in memory.
+///
+/// ```
+/// for row in try csv.decoding<SaleRow>(try dir.open(path"sales.csv")) {
+/// 	print(row.sku)
+/// }
+/// ```
+pub fn decoding<T: Codable<CsvCodec>>(source: Iterable<Bytes, IoError>) -> Iterable<T, CsvError>
+
+/// Writes records as a stream of UTF-8 CSV, a header row first, as the result is read.
+/// Encoding can't fail, so the stream fails only as `rows` does.
+pub fn encoding<T: Codable<CsvCodec>, E: Error>(rows: Iterable<T, E>) -> Iterable<Bytes, E>
+
+/// Reads a stream of UTF-8 CSV a row at a time, each row as its fields' text, for data whose
+/// columns aren't known in advance. The header row, if there is one, is the first row.
+///
+/// ```
+/// for row in try csv.decodingRows(env.stdin) {
+/// 	print(row.join(" | "))
+/// }
+/// ```
+pub fn decodingRows(source: Iterable<Bytes, IoError>) -> Iterable<List<String>, CsvError>
+
+/// Writes rows of text as a stream of UTF-8 CSV, quoting fields where needed, as the result
+/// is read. Encoding can't fail, so the stream fails only as `rows` does.
+pub fn encodingRows<E: Error>(rows: Iterable<List<String>, E>) -> Iterable<Bytes, E>
+
+/// Why CSV couldn't be read.
+pub enum CsvError implements Error {
+	/// The stream being read failed.
+	Io(from IoError)
+
+	/// A line isn't valid CSV, such as an unclosed quote.
+	Malformed(line: Int, reason: String)
+
+	/// A value couldn't be decoded into its field's type, or a column is missing.
+	Field(line: Int, column: String, reason: String)
+
+	/// What went wrong, with the line number.
+	override get message: String
+}
+
+/// Marks a record as readable and writable as CSV rows. With no policy, each field maps
+/// to the column with exactly its name.
+///
+/// ```
+/// @csv
+/// record SaleRow {
+/// 	sku: String
+/// 	quantity: Int
+/// }
+/// ```
+pub attribute csv implements Codable<CsvCodec> {
+	/// On a type: how field names become column names.
+	columns: Case? = null
+
+	/// On a field: the column's name, overriding the type's policy.
+	column: String? = null
+}

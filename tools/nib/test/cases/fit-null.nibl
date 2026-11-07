@@ -1,0 +1,4 @@
+// expect: error: this is `null`, but `name` is declared as a `String`, which can't be `null`: write `String?` if it may be missing
+fn run() {
+	let name: String = null
+}

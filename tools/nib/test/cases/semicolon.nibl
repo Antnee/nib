@@ -1,0 +1,4 @@
+// expect: error: no semicolons
+pub fn main() {
+	let x = 1;
+}

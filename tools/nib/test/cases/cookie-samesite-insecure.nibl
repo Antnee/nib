@@ -1,0 +1,4 @@
+// expect: only error: browsers drop a cookie with `SameSite.None` unless it's secure
+import std.http.{Cookie, SameSite}
+
+const EMBED = Cookie(name: "embed", value: "1", sameSite: SameSite.None, secure: false)

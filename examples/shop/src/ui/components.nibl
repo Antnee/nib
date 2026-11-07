@@ -1,0 +1,121 @@
+import std.forms.{FieldProblem, FormField, FormState}
+import std.html.{Html}
+import std.http.{CsrfToken, RelativeUrl}
+import std.locale.{Locale}
+import shop.users.{User}
+
+// Components are functions that return `Html`. Props are parameters, slots are `Html`
+// parameters, and a layout is just a component that takes the page's content.
+// Interpolated values are escaped for their context (text, attribute, URL); `Html` values
+// are inserted as they are.
+
+/// What every page needs from the request.
+record PageContext {
+	user: User?
+	csrf: CsrfToken
+	notice: String?
+	locale: Locale
+}
+
+fn layout(page: PageContext, named title: String, named content: Html) -> Html {
+	return html"""
+		<!doctype html>
+		<html lang="${page.locale}">
+			<head>
+				<meta charset="utf-8">
+				<meta name="viewport" content="width=device-width, initial-scale=1">
+				<title>${title} · Shop</title>
+				<link rel="stylesheet" href="/assets/app.css">
+			</head>
+			<body>
+				${nav(page)}
+				<main>
+					${notice(page.notice)}
+					${content}
+				</main>
+			</body>
+		</html>
+		"""
+}
+
+fn nav(page: PageContext) -> Html {
+	let user = page.user
+	if user is not null {
+		return html"""
+			<nav>
+				<a href="/">Shop</a>
+				<span>${user.email}</span>
+				${postButton(page, action: url"/sign-out", label: "Sign out")}
+			</nav>
+			"""
+	}
+	return html"""
+		<nav>
+			<a href="/">Shop</a>
+			<a href="/sign-in">Sign in</a>
+			<a href="/sign-up">Sign up</a>
+		</nav>
+		"""
+}
+
+fn notice(message: String?) -> Html {
+	return message is not null ? html"""<p class="notice" role="status">${message}</p>""" : Html.EMPTY
+}
+
+/// Every form posts with a CSRF token; the router rejects unsafe requests without one.
+fn form(page: PageContext, named action: RelativeUrl, named content: Html) -> Html {
+	return html"""
+		<form method="post" action="${action}">
+			${page.csrf.hiddenField}
+			${content}
+		</form>
+		"""
+}
+
+fn postButton(page: PageContext, named action: RelativeUrl, named label: String) -> Html {
+	return form(page, action:, content: button(label))
+}
+
+fn button(label: String) -> Html {
+	return html"""<button type="submit">${label}</button>"""
+}
+
+enum InputKind: String {
+	Text = "text"
+	Email = "email"
+	Password = "password"
+	Hidden = "hidden"
+}
+
+/// A labelled input with what's wrong with it, if anything. The value comes from the
+/// submitted form, except for `@sensitive` fields such as passwords, which `FormState` never
+/// echoes back. `invalid` is the page's words for a value that's missing or doesn't parse.
+fn field(
+	state: FormState,
+	named input: FormField,
+	named label: String,
+	named kind: InputKind,
+	named invalid: String,
+) -> Html {
+	let name = input.name
+	let errorId = "${name}-error"
+	let error = match state.problems.get(input) {
+		null => null
+		FieldProblem.Missing or FieldProblem.Invalid => invalid
+		FieldProblem.Explained(text:) => text
+	}
+	// Empty when there's no error, so screen readers don't look for an element that isn't there.
+	let describedBy = error is null ? "" : errorId
+	return html"""
+		<div class="field">
+			<label for="${name}">${label}</label>
+			<input id="${name}" name="${name}" type="${kind}" value="${state.values.get(input) ?? ""}"
+				aria-describedby="${describedBy}">
+			${fieldError(errorId, error)}
+		</div>
+		"""
+}
+
+fn fieldError(id: String, message: String?) -> Html {
+	return message is not null ? html"""<p class="error" id="${id}">${message}</p>""" : Html.EMPTY
+}

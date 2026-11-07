@@ -1,0 +1,89 @@
+import std.codec.{Codable, JsonCodec}
+import std.db.{Db, DbError, Tx}
+
+/// A queue of messages for work that happens later or elsewhere. Delivery is at least once,
+/// so a consumer must cope with seeing the same message twice.
+pub interface Queue<T: Codable<JsonCodec>> {
+	/// Adds a message to the queue.
+	fn publish(message: T) else QueueError
+}
+
+/// A queue that keeps its messages through a restart and redelivers any that weren't
+/// acknowledged. Ask for this type where losing a message would matter.
+pub interface DurableQueue<T: Codable<JsonCodec>> {
+	/// Adds a message to the queue.
+	fn publish(message: T) else QueueError
+
+	/// An outbox that publishes inside the transaction: its messages are delivered only if
+	/// the transaction commits, and are discarded if it rolls back.
+	fn within(tx: Tx) -> Outbox<T>
+}
+
+/// Somewhere to publish messages as part of a larger piece of work, so the messages and
+/// the work's other changes succeed or fail together.
+pub interface Outbox<T: Codable<JsonCodec>> {
+	/// Adds a message, to be delivered once the work it belongs to commits.
+	fn publish(message: T) else QueueError
+}
+
+/// What a consumer returns when it has handled a message. Returning an error instead
+/// leaves the message on the queue, to be retried with backoff and moved to the
+/// dead-letter queue if it keeps failing.
+pub record Ack {
+	/// The message is handled and can be removed from the queue.
+	const DONE: Ack = Ack()
+
+	/// The same acknowledgement, carrying work to run once the message has been
+	/// acknowledged. The work is best effort: it isn't retried, and it can't fail, so it
+	/// handles its own errors.
+	fn onAcked(work: fn() -> Void) -> Ack
+}
+
+/// Where a queue's messages go, and what they are: a queue's name and its message type,
+/// declared once so that every publisher and consumer of it agrees on both. The name is
+/// logical; the manifest declares it in `[queues]`, with the back end that holds it.
+///
+/// ```
+/// const EMAILS = QueueAddress<EmailJob>("emails")
+/// ```
+pub type QueueAddress<T: Codable<JsonCodec>>: String
+
+/// Reads messages from a queue and hands each to a handler. The host calls `services` once
+/// per message, so nothing built for one message is seen by the next.
+///
+/// ```
+/// Consumer.of(EMAILS, services: freshServices, handle: fn(app) => app.delivery.deliver)
+/// ```
+pub class Consumer {
+	/// A consumer of the queue at `queue`, whose `handle` picks the handler from that
+	/// message's services.
+	static fn of<T: Codable<JsonCodec>, S, E: Error>(
+		queue: QueueAddress<T>,
+		named services: fn() -> S,
+		named handle: fn(S) -> (fn(T) -> Ack else E),
+	) -> Consumer
+}
+
+/// What publishing to a queue can fail with.
+pub enum QueueError implements Error {
+	/// The database that holds a database-backed queue failed.
+	Database(from DbError)
+
+	/// The queue's back end couldn't be reached.
+	Unavailable(reason: String)
+
+	/// What went wrong.
+	override get message: String
+}
+
+/// Creates the tables the database-backed queue keeps its messages in. Call it from a
+/// migration, so the schema changes only when you say so.
+///
+/// ```
+/// record InstallQueue implements Migration {
+/// 	override fn apply(db: Db) else MigrationError {
+/// 		try queue.installSchema(db)
+/// 	}
+/// }
+/// ```
+pub fn installSchema(db: Db) else DbError

@@ -1,0 +1,4 @@
+// expect: error: which has no `formatted`: the call before it can fail, so give it its own `try`, since one `try` covers one call
+fn digits(text: String) -> Int else ParseError {
+	return try Int.parse(text).formatted().length
+}

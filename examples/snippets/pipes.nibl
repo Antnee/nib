@@ -1,0 +1,36 @@
+import std.compress.gzip
+import std.csv with {@csv}
+import std.files.{Dir, FileError}
+import std.time.{Date}
+
+// Pipes chain free functions from different modules, where there's no method to call.
+// Each step takes the value from the step before. A bare function name works when the
+// value is its only argument; otherwise write a closure. None of these steps can fail. A step
+// that can fail goes after the pipe, with its own `try`, because one `try` covers one call.
+
+@csv
+record SaleRow {
+	sku: String
+	quantity: Int
+	total: Decimal
+}
+
+/// Writes a day's sales into the archive directory as a compressed CSV file.
+fn archive(rows: List<SaleRow>, day: Date, dir: Dir) else ArchiveError {
+	// A date can go straight into a path because it can't contain `/` or `..`. Text from
+	// outside would have to pass `PathSegment.parse` first.
+	let bytes = rows |> csv.encode |> gzip.compress
+	try dir.write(path"sales-${day}.csv.gz", bytes)
+}
+
+// The same thing without pipes, read from the inside out:
+//
+//     try dir.write(path"sales-${day}.csv.gz", gzip.compress(csv.encode(rows)))
+
+enum ArchiveError implements Error {
+	Files(from FileError)
+
+	override get message: String => match this {
+		ArchiveError.Files => "couldn't write the archive"
+	}
+}

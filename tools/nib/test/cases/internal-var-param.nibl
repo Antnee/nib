@@ -1,0 +1,4 @@
+// expect: error: `var` already makes the parameter a field visible across the package, so leave out `internal`
+class Counter {
+	construct(internal var count: Int) {}
+}

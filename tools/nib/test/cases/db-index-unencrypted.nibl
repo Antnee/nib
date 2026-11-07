@@ -1,0 +1,11 @@
+// expect: only error: a blind index is for an encrypted column, so say how the field is encrypted too
+import std.crypto.{BlindIndex}
+import std.db.{@db}
+
+const EMAIL_INDEX = BlindIndex(name: "users.email", column: "email_idx", keyring: "pii")
+
+@db(table: "users")
+record User {
+	@db(blindIndex: EMAIL_INDEX)
+	email: String
+}

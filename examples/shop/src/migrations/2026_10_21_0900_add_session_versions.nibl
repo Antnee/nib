@@ -1,0 +1,10 @@
+import std.db.{Db}
+import std.migrations.{Migration, MigrationError}
+
+/// A version per user that each session records at sign-in. Existing sessions hold no
+/// version, so they're signed out once, when this ships.
+record AddSessionVersions implements Migration {
+	override fn apply(db: Db) else MigrationError {
+		try db.execute(sql"alter table users add column session_version int not null default 1")
+	}
+}

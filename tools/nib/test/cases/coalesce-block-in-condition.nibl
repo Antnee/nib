@@ -1,0 +1,6 @@
+// expect: error: isn't allowed in a condition
+fn check(x: Bool?) {
+	if x ?? { return } {
+		print("yes")
+	}
+}

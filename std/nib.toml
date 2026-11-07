@@ -1,0 +1,6 @@
+[package]
+name = "std"
+
+# Modules that only tests can import.
+[testing]
+modules = ["std.testing"]

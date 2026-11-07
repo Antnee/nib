@@ -1,0 +1,4 @@
+// expect: error: unknown type `Int64`: `Int` is the 64-bit signed integer
+fn total(count: Int64) -> Int {
+	return 0
+}

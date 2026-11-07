@@ -1,0 +1,271 @@
+import std.crypto.passwords with {BcryptScheme, PasswordAlgorithm, PasswordHash}
+import std.testing with {FakeClock, FakeSecureRandom, InMemoryRateLimiter, RecordingOutbox}
+import std.time.{Instant}
+import shop.core.{RepositoryError}
+
+// Setup is plain functions. There's no mocking framework: fakes are ordinary classes
+// (see fakes.test.nibl) or anonymous implementations.
+
+record Fixture {
+	accounts: Accounts
+	work: InMemoryAccountsWork
+	users: InMemoryUserRepository
+	emails: RecordingOutbox<EmailJob>
+}
+
+fn fixture() -> Fixture {
+	let work = new InMemoryAccountsWork()
+
+	let clock = FakeClock.at(Instant.parse("2026-09-15T10:00:00Z").orPanic("a fixed instant"))
+	let accounts = new Accounts(
+		work:,
+		users: work.users,
+		tokens: work.tokens,
+		limiter: new InMemoryRateLimiter(clock),
+		clock:,
+		random: new FakeSecureRandom(),
+		policy: testing.FAST_PASSWORD_POLICY,
+	)
+
+	return Fixture(accounts:, work:, users: work.users, emails: work.outbox)
+}
+
+fn testEmail(text: String) -> Email {
+	return Email.parse(text).orPanic("test email should parse")
+}
+
+fn testPassword(text: String) -> Password {
+	return Password.parse(text).orPanic("test password should parse")
+}
+
+fn testAttempt(text: String) -> PasswordAttempt {
+	return PasswordAttempt.parse(text).orPanic("test password attempt should parse")
+}
+
+test "signing up creates an unconfirmed user and queues a confirmation email" {
+	let f = fixture()
+
+	try f.accounts.signUp(testEmail("ann@example.com"), testPassword("correct horse battery"))
+
+	let user = try f.users.findByEmail(testEmail("ann@example.com")) ?? panic("the user was not created")
+	expect not user.isConfirmed
+	expect f.emails.published == [EmailJob.ConfirmEmail(userId: user.id)]
+	expect f.work.commits == 1
+}
+
+test "emails are normalised, so the same address can't sign up twice" {
+	expect testEmail("  Ann@Example.COM ") == testEmail("ann@example.com")
+}
+
+test "signing up with a registered email tells the owner instead" {
+	let f = fixture()
+	try f.accounts.signUp(testEmail("ann@example.com"), testPassword("correct horse battery"))
+
+	try f.accounts.signUp(testEmail("ann@example.com"), testPassword("a different long password"))
+
+	expect f.users.users.length == 1
+	expect f.emails.published.last is EmailJob.AccountExists
+}
+
+test "short passwords are rejected" for text in ["", "short", "elevenchars"] {
+	expect Password.parse(text) is Result.Err(PasswordError.TooShort(minimum: 12))
+}
+
+test "a wrong password is rejected" {
+	let f = fixture()
+	let _ = f.users.insert(
+		testEmail("ann@example.com"),
+		passwords.hash(testPassword("correct horse battery"), testing.FAST_PASSWORD_POLICY),
+		confirmed: true,
+	)
+
+	let outcome = try f.accounts.signIn(testEmail("ann@example.com"), testAttempt("incorrect horse battery"))
+
+	expect outcome is SignInOutcome.InvalidCredentials
+}
+
+test "an unknown email gets the same answer as a wrong password" {
+	let f = fixture()
+
+	let outcome = try f.accounts.signIn(testEmail("nobody@example.com"), testAttempt("correct horse battery"))
+
+	expect outcome is SignInOutcome.InvalidCredentials
+}
+
+test "signing in before confirming resends the confirmation email" {
+	let f = fixture()
+	let user = f.users.insert(
+		testEmail("ann@example.com"),
+		passwords.hash(testPassword("correct horse battery"), testing.FAST_PASSWORD_POLICY),
+		confirmed: false,
+	)
+
+	let outcome = try f.accounts.signIn(testEmail("ann@example.com"), testAttempt("correct horse battery"))
+
+	expect outcome is SignInOutcome.Unconfirmed
+	expect f.emails.published == [EmailJob.ConfirmEmail(userId: user.id)]
+}
+
+test "a legacy bcrypt hash is upgraded on sign-in, even for a short old password" {
+	let f = fixture()
+	let legacy = passwords.hash(testAttempt("teapot"), passwords.Policy.using(BcryptScheme.cost(4)))
+	let _ = f.users.insert(testEmail("ann@example.com"), legacy, confirmed: true)
+
+	let outcome = try f.accounts.signIn(testEmail("ann@example.com"), testAttempt("teapot"))
+	let user = match outcome {
+		SignInOutcome.SignedIn(user:) => user
+		SignInOutcome.InvalidCredentials or SignInOutcome.Unconfirmed => panic("the sign-in failed")
+	}
+	let stored = try f.users.findByEmail(testEmail("ann@example.com"))
+
+	expect user.passwordHash.algorithm == PasswordAlgorithm.Argon2id
+	expect stored == user
+}
+
+test "a reset token works once" {
+	let f = fixture()
+	let user = f.users.insert(
+		testEmail("ann@example.com"),
+		passwords.hash(testPassword("correct horse battery"), testing.FAST_PASSWORD_POLICY),
+		confirmed: true,
+	)
+	let token = try f.accounts.issueToken(user.id, TokenPurpose.ResetPassword)
+
+	expect try f.accounts.resetPassword(token.hash, testPassword("a brand new password")) is LinkOutcome.Done
+	let again = try f.accounts.resetPassword(token.hash, testPassword("yet another password"))
+
+	expect again is LinkOutcome.InvalidOrExpired
+	expect try f.accounts.signIn(
+		testEmail("ann@example.com"),
+		testAttempt("a brand new password"),
+	) is SignInOutcome.SignedIn
+}
+
+test "a reset signs the account out everywhere" {
+	let f = fixture()
+	let user = f.users.insert(
+		testEmail("ann@example.com"),
+		passwords.hash(testPassword("correct horse battery"), testing.FAST_PASSWORD_POLICY),
+		confirmed: true,
+	)
+	let token = try f.accounts.issueToken(user.id, TokenPurpose.ResetPassword)
+
+	expect try f.accounts.resetPassword(token.hash, testPassword("a brand new password")) is LinkOutcome.Done
+
+	let stored = try f.users.find(user.id) ?? panic("the user was not found")
+	expect stored.sessionVersion == user.sessionVersion + 1
+}
+
+test "a reset cancels the account's other reset links" {
+	let f = fixture()
+	let user = f.users.insert(
+		testEmail("ann@example.com"),
+		passwords.hash(testPassword("correct horse battery"), testing.FAST_PASSWORD_POLICY),
+		confirmed: true,
+	)
+	let first = try f.accounts.issueToken(user.id, TokenPurpose.ResetPassword)
+	let second = try f.accounts.issueToken(user.id, TokenPurpose.ResetPassword)
+
+	expect try f.accounts.resetPassword(first.hash, testPassword("a brand new password")) is LinkOutcome.Done
+	let again = try f.accounts.resetPassword(second.hash, testPassword("yet another password"))
+
+	expect again is LinkOutcome.InvalidOrExpired
+}
+
+test "a reset confirms an unconfirmed account" {
+	let f = fixture()
+	let user = f.users.insert(
+		testEmail("ann@example.com"),
+		passwords.hash(testPassword("correct horse battery"), testing.FAST_PASSWORD_POLICY),
+		confirmed: false,
+	)
+	let token = try f.accounts.issueToken(user.id, TokenPurpose.ResetPassword)
+
+	expect try f.accounts.resetPassword(token.hash, testPassword("a brand new password")) is LinkOutcome.Done
+
+	let stored = try f.users.find(user.id) ?? panic("the user was not found")
+	expect stored.isConfirmed
+}
+
+test "a hash upgrade doesn't undo a reset made while signing in" {
+	let f = fixture()
+	let legacy = passwords.hash(testAttempt("teapot"), passwords.Policy.using(BcryptScheme.cost(4)))
+	let before = f.users.insert(testEmail("ann@example.com"), legacy, confirmed: true)
+	let reset = passwords.hash(testPassword("a brand new password"), testing.FAST_PASSWORD_POLICY)
+	try f.users.saveCredentials(before.id, passwordHash: reset, confirmedAt: before.confirmedAt)
+
+	// Sign-in read the user just before the reset was saved.
+	let staleReads = new UserRepository {
+		override fn find(id: UserId) -> User? else RepositoryError {
+			return try f.users.find(id)
+		}
+
+		override fn findByEmail(email: Email) -> User? else RepositoryError {
+			return before
+		}
+
+		override fn emailKey(email: Email) -> EmailKey else RepositoryError {
+			return try f.users.emailKey(email)
+		}
+
+		override fn findByEmailKey(key: EmailKey) -> User? else RepositoryError {
+			return try f.users.findByEmailKey(key)
+		}
+
+		override fn createIfAbsent(
+			email: Email,
+			passwordHash: PasswordHash,
+			named at: Instant,
+		) -> Creation else RepositoryError {
+			return try f.users.createIfAbsent(email, passwordHash, at:)
+		}
+
+		override fn saveCredentials(
+			id: UserId,
+			named passwordHash: PasswordHash,
+			named confirmedAt: Instant?,
+		) else RepositoryError {
+			try f.users.saveCredentials(id, passwordHash:, confirmedAt:)
+		}
+
+		override fn upgradePasswordHash(
+			id: UserId,
+			named current: PasswordHash,
+			named upgraded: PasswordHash,
+		) -> Bool else RepositoryError {
+			return try f.users.upgradePasswordHash(id, current:, upgraded:)
+		}
+
+		override fn endSessions(id: UserId) else RepositoryError {
+			try f.users.endSessions(id)
+		}
+	}
+	let clock = FakeClock.at(Instant.EPOCH)
+	let accounts = new Accounts(
+		work: f.work,
+		users: staleReads,
+		tokens: f.work.tokens,
+		limiter: new InMemoryRateLimiter(clock),
+		clock:,
+		random: new FakeSecureRandom(),
+		policy: testing.FAST_PASSWORD_POLICY,
+	)
+
+	let outcome = try accounts.signIn(testEmail("ann@example.com"), testAttempt("teapot"))
+
+	expect outcome is SignInOutcome.InvalidCredentials
+	let stored = try f.users.find(before.id) ?? panic("the user was not found")
+	expect stored.passwordHash == reset
+}
+
+test "a reset request queues the same job whether or not the address has an account" {
+	let f = fixture()
+	let hash = passwords.hash(testPassword("correct horse battery"), testing.FAST_PASSWORD_POLICY)
+	let _ = f.users.insert(testEmail("ann@example.com"), hash, confirmed: true)
+
+	try f.accounts.requestPasswordReset(testEmail("ann@example.com"))
+	try f.accounts.requestPasswordReset(testEmail("nobody@example.com"))
+
+	expect f.emails.published.length == 2
+	expect f.emails.published.allMatch(fn(job) => job is EmailJob.ResetRequested)
+}

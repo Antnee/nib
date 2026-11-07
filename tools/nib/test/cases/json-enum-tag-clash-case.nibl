@@ -1,0 +1,8 @@
+// expect: only error: `Moved`'s `kind` is written under `"kind"`, the variant's tag: rename it with `@json(key: …)`
+import std.codec.{Case}
+import std.json.{@json}
+
+@json(tag: "kind", keys: Case.Snake)
+enum Change {
+	Moved(kind: String, toRow: Int)
+}

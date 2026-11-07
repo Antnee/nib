@@ -1,0 +1,16 @@
+// A worker that delivers webhooks: it reads events from a queue and posts each one, signed,
+// to the endpoint of the subscription it's for. It has no web server of its own.
+
+import std.app.{App, ConfigError, Env}
+import std.log
+import std.queue.{Consumer}
+
+pub fn main(env: Env) -> App else ConfigError {
+	let config = Config(signingKey: try env.secret("WEBHOOK_SIGNING_KEY"))
+	let freshServices = fn() => new Services(env, config)
+
+	return App(
+		consumers: [Consumer.of(WEBHOOKS, services: freshServices, handle: fn(app) => app.delivery.deliver)],
+		logRoutes: [log.Route(channel: "webhooks", minLevel: log.Level.Info, sink: log.Stdout.json())],
+	)
+}

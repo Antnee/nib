@@ -1,0 +1,6 @@
+// expect: error: an error's `message` is for developers and logs, so it doesn't go on a page
+import std.html.{Html}
+
+fn problem(error: ParseError) -> Html {
+	return html"<p>${error.message}</p>"
+}

@@ -1,0 +1,57 @@
+import std.csv with {@csv}
+import std.http.{@guard, BodyWriter, Response}
+import std.io.{IoError}
+import std.money.{Currency}
+import std.time.{Instant}
+import shop.core.{RepositoryError}
+import shop.orders.{Order, OrderRepository, OrderStatus}
+import shop.users.{User}
+
+/// One order as a row of the CSV export.
+@csv
+record OrderCsvRow {
+	number: String
+	placedAt: Instant
+	status: OrderStatus
+	amount: Decimal
+	currency: Currency
+
+	static fn of(order: Order) -> OrderCsvRow {
+		return OrderCsvRow(
+			number: order.number,
+			placedAt: order.placedAt,
+			status: order.status,
+			amount: order.total.amount,
+			currency: order.total.currency,
+		)
+	}
+}
+
+class ExportHandlers {
+	construct(private orders: OrderRepository) {}
+
+	/// The signed-in customer's orders as a CSV download. Each row is read, converted and
+	/// sent before the next is fetched, so the download starts with the first row and memory
+	/// stays flat however long the history is.
+	fn ordersCsv(@guard user: User) -> Response {
+		let rows = this.orders.forCustomer(user.id).map(fn(order) => OrderCsvRow.of(order))
+		return Response.stream(contentType: "text/csv", write: fn(out: BodyWriter) else ExportError {
+			for chunk in try csv.encoding(rows) {
+				try out.write(chunk)
+			}
+		}).withHeader("Content-Disposition", "attachment; filename=orders.csv")
+	}
+}
+
+/// Why an export failed. Before the first row is sent, the customer gets an error page.
+/// After it, the host breaks off the connection, so they see a failed download. The host
+/// logs it either way.
+enum ExportError implements Error {
+	Storage(from RepositoryError)
+	Io(from IoError)
+
+	override get message: String => match this {
+		ExportError.Storage => "couldn't read the orders"
+		ExportError.Io => "couldn't send the export"
+	}
+}

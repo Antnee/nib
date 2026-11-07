@@ -1,0 +1,4 @@
+// expect: error: a `Decimal` has no `/`, because most divisions don't end
+fn third(price: Decimal) -> Decimal {
+	return price / 3
+}

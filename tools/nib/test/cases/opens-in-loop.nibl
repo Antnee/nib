@@ -1,0 +1,11 @@
+// expect: warning: `file` is opened in a loop and not closed in it
+import std.files.{Dir, FileError, Path}
+
+fn sizes(dir: Dir, paths: List<Path>) -> Int else FileError {
+	var total = 0
+	for path in paths {
+		let file = try dir.open(path)
+		total += 1
+	}
+	return total
+}

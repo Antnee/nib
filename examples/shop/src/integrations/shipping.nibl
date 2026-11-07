@@ -1,0 +1,49 @@
+import std.http.{ApiClient}
+import std.json.{@json}
+import std.money.{Currency, Money}
+import shop.orders.{Address, ShippingError, ShippingRates, TaxError, TaxRates}
+
+/// Quotes from a shipping provider's JSON API.
+class HttpShippingRates implements ShippingRates {
+	construct(private api: ApiClient) {}
+
+	override fn quote(to: Address, weightGrams: Int) -> Money else ShippingError {
+		let request = QuoteRequest(postcode: to.postcode, country: to.country, grams: weightGrams)
+
+		// Translate transport, status, decoding and parsing failures into the domain's terms.
+		let response = this.api.post(url"quotes", json: request) catch err { fail unavailable(err) }
+		let quote = response.body.json<QuoteResponse>() catch err { fail unavailable(err) }
+		let amount = Decimal.parse(quote.amount) catch err { fail unavailable(err) }
+		let currency = Currency.parse(quote.currency) catch err { fail unavailable(err) }
+		return Money(amount:, currency:)
+	}
+}
+
+fn unavailable(error: Error) -> ShippingError {
+	return ShippingError.Unavailable(cause: error)
+}
+
+@json
+record QuoteRequest {
+	postcode: String
+	country: String
+	grams: Int
+}
+
+@json
+record QuoteResponse {
+	amount: String
+	currency: String
+}
+
+/// UK VAT at a flat rate. Enough for the demo; a real shop would call a tax service.
+class FlatTaxRates implements TaxRates {
+	construct(named private rate: Decimal) {}
+
+	override fn calculate(to: Address, subtotal: Money) -> Money else TaxError {
+		if to.country != "GB" {
+			fail TaxError.UnsupportedCountry(country: to.country)
+		}
+		return subtotal.times(this.rate, rounding: Rounding.HalfToEven)
+	}
+}

@@ -1,0 +1,7 @@
+// expect: error: this block runs when the value is `null`, so it has to leave, with `return`, `fail` or `panic`, or `break` or `continue` in a loop. To work out a value instead, declare it first with `let name: Type` and set it with `if`
+fn name(nickname: String?) -> String {
+	let chosen = nickname ?? {
+		print("no nickname")
+	}
+	return chosen
+}

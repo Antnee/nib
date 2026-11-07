@@ -1,0 +1,10 @@
+// expect: error: `total` is an instance member of `Cart`: use it on a value, not on the type
+record Cart {
+	items: List<Int>
+
+	get total: Int => this.items.length
+}
+
+fn f() -> Int {
+	return Cart.total
+}

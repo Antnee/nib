@@ -1,0 +1,71 @@
+/// A format that values are written in and read from, such as JSON, CSV or a database row.
+/// This module declares the stdlib's formats, so a type can name the formats it may be
+/// written in without importing their modules. Each format's module declares the attribute
+/// that opts types into it.
+///
+/// A package adds a format the same way: a class that implements `Codec`, and an attribute
+/// that implements `Codable` of it.
+///
+/// ```
+/// pub class YamlCodec implements Codec {}
+///
+/// pub attribute yaml implements Codable<YamlCodec> {}
+/// ```
+pub interface Codec {}
+
+/// The JSON format, for `Codable<JsonCodec>` in signatures that send or read JSON.
+pub class JsonCodec implements Codec {}
+
+/// The CSV format.
+pub class CsvCodec implements Codec {}
+
+/// The form-encoding format (`application/x-www-form-urlencoded`), as browsers submit forms
+/// and query strings carry them.
+pub class FormCodec implements Codec {}
+
+/// The database row format: how a record's fields map to columns, and back.
+pub class DbCodec implements Codec {}
+
+/// What a session can hold: small values, not records. Numbers, `Bool`, `String`, backed
+/// enums, distinct types of those, and stdlib types that say so, such as `TokenHash`. A
+/// session is for remembering who someone is and where they are in a flow; keep anything
+/// bigger in the database, and put its ID in the session.
+pub class SessionCodec implements Codec {}
+
+/// A type that can be written with the codec `C` and read back. A type implements it by
+/// carrying that codec's attribute: `@json` makes a type `Codable<JsonCodec>`, and the
+/// compiler generates the code that walks its fields, each of which must be codable too.
+/// Built-in scalars, backed enums, and `List`, `Set`, `Map` and `T?` of codable types are
+/// codable with every codec. So is a type that implements `Codable<Codec>`, as the
+/// stdlib's value types (`Instant`, `Url`) do. A distinct type is written as its base; one
+/// with a `private` wrap must implement `Parseable`, which reads it back.
+///
+/// Opting in is per codec, so a database record that holds a password hash isn't
+/// `Codable<JsonCodec>` and can't be sent as JSON by mistake.
+///
+/// ```
+/// fn report<T: Codable<JsonCodec>>(summary: T) -> Response {
+/// 	return Response.json(summary, status: Status.ACCEPTED)
+/// }
+/// ```
+pub interface Codable<C: Codec> {}
+
+/// A way of writing a name made of several words. Codecs use it to map field names to keys
+/// or columns, so a type states its naming policy in one place.
+///
+/// ```
+/// @db(table: "users", columns: Case.Snake)
+/// record User {
+/// 	createdAt: Instant
+/// }
+/// ```
+pub enum Case {
+	/// Lower case, words joined with `_`: `created_at`.
+	Snake
+	/// First word lower case, later words capitalised: `createdAt`.
+	Camel
+	/// Every word capitalised: `CreatedAt`.
+	Pascal
+	/// Lower case, words joined with `-`: `created-at`.
+	Kebab
+}

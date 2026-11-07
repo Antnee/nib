@@ -1,0 +1,6 @@
+// expect: error: this is a `Period`, but `duration` needs a `Duration`: a period is calendar time, so its length depends on the zone; add it to a date in a zone, as `instant.in(zone).date.plus(…)`
+import std.time.{Clock, Instant, Period}
+
+fn tomorrow(clock: Clock) -> Instant {
+	return clock.now().plus(Period.of(days: 1))
+}

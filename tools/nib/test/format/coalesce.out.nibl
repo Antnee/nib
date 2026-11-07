@@ -1,0 +1,11 @@
+fn find(id: Int) -> String? {
+	return null
+}
+
+fn name(id: Int) -> String {
+	let found = find(id)
+		?? "nobody"
+	let text = find(id + 1)
+		?? "nobody"
+	return "${found} ${text}"
+}

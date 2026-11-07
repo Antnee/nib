@@ -1,0 +1,14 @@
+// expect: only error: `map` on an `Iterable` is lazy, so its function can't fail. Collect the items with `toList()`
+enum E implements Error {
+	Bad
+
+	override get message: String => "bad"
+}
+
+fn parse(x: Int) -> Int else E {
+	return x < 0 ? fail E.Bad : x
+}
+
+fn parsed(items: Iterable<Int>) -> Iterable<Int> {
+	return items.map(fn(x) => try parse(x))
+}

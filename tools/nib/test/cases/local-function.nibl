@@ -1,0 +1,7 @@
+// expect: error: a function can't be declared inside another
+fn total(prices: List<Int>) -> Int {
+	fn double(n: Int) -> Int {
+		return n * 2
+	}
+	return prices.map(double).sum()
+}

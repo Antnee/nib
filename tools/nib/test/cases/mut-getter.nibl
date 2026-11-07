@@ -1,0 +1,15 @@
+// expect: error: a getter can't change anything: make this a method
+record Tally {
+	var count: Int
+
+	mut fn add() -> Int {
+		this.count += 1
+		return this.count
+	}
+}
+
+class Counter {
+	private var tally: Tally = Tally(count: 0)
+
+	get next: Int => this.tally.add()
+}

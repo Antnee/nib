@@ -1,0 +1,4 @@
+// expect: error: `defer start`
+fn f() {
+	defer start g()
+}

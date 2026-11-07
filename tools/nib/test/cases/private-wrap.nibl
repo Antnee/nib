@@ -1,0 +1,10 @@
+// expect: error: only `Email`'s own functions can make one: use `Email.parse(…)`
+type Email: private String implements Parseable {
+	override static fn parse(text: String) -> Email else ParseError {
+		return Email(text)
+	}
+}
+
+fn make() -> Email {
+	return Email("not checked")
+}

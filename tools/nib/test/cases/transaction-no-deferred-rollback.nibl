@@ -1,0 +1,8 @@
+// expect: warning: `tx` has no `defer tx.rollback()`, so a failure before the commit leaves it open, holding its connection: add one after `begin`
+import std.db.{Db, DbError}
+
+fn clear(db: Db) else DbError {
+	let tx = try db.begin()
+	try tx.execute(sql"delete from carts")
+	try tx.commit()
+}

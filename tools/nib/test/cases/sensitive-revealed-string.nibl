@@ -1,0 +1,5 @@
+// expect: error: this writes a secret's text into a plain string, where it would no longer be redacted
+
+fn header(key: Secret) -> String {
+	return "Bearer ${key.revealed}"
+}

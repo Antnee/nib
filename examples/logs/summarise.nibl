@@ -1,0 +1,247 @@
+#!/usr/bin/env nib
+
+// Summarises a directory of application logs: how many lines there are at each level, the
+// most common errors, and the busiest hour. Each line looks like
+//
+//   2026-09-21T14:02:11Z ERROR payment declined
+//
+// The log directory is granted on the command line, as `logs`:
+//
+//   nib run --dir logs=/var/log/shop examples/logs/summarise.nibl
+//   nib run --dir logs=/var/log/shop examples/logs/summarise.nibl --top 10
+
+import std.app.{Env}
+import std.channels.{Channel, ChannelError}
+import std.files.{Dir, FileError}
+import std.io with {IoError}
+
+pub fn main(env: Env) -> Int else IoError {
+	let top = options(env.args) catch err {
+		let problem = match err {
+			UsageError.Unknown(argument:) => "There's no option called ${argument}."
+			UsageError.MissingValue(option:) => "${option} needs a number after it."
+			UsageError.NotNumeric(value:) => "${value} isn't a whole number."
+		}
+		try env.stderr.writeLine("${problem} Usage: summarise [--top N]")
+		return 2
+	}
+	summarise(env, top) catch err {
+		let problem = match err {
+			SummaryError.Files => "The logs directory couldn't be opened, or a log file couldn't be read."
+			SummaryError.Io => "Reading a log file failed partway."
+			SummaryError.Stopped => "Reading stopped before the end."
+		}
+		try env.stderr.writeLine(problem)
+		return 1
+	}
+	return 0
+}
+
+fn summarise(env: Env, top: Int) else SummaryError {
+	let logs = try env.dir("logs")
+
+	// Reading waits on the disk, so it runs as its own task, and counting carries on while it
+	// waits. The channel holds at most 1,000 lines between them.
+	let lines = Channel<String>.bounded(capacity: 1000)
+	let reader = start readAll(logs, lines)
+
+	var tally = Tally(byLevel: [:], errors: [:], byHour: [:], lines: 0, skipped: 0)
+	for line in lines {
+		let entry = parse(line) ?? {
+			tally.skip()
+			continue
+		}
+		tally.add(entry)
+		if tally.lines mod 100_000 == 0 {
+			// Progress goes to standard error, so the summary alone can be piped on.
+			try env.stderr.writeLine("…${tally.lines.formatted(grouping: true)} lines")
+		}
+	}
+	let (files, bytes) = try reader
+	if tally.lines == 0 {
+		let skipped = tally.skipped > 0 ? ", and ${tally.skipped} lines weren't in the expected form" : ""
+		print("No log lines found in ${files} files${skipped}.")
+		return
+	}
+
+	let percent = fn(part: Int) -> Float => part.toFloat() / tally.lines.toFloat() * 100
+
+	print("${files} files, ${(bytes div 1024).formatted(grouping: true)} KB, ${tally.lines} lines")
+	for level in [Level.Debug, Level.Info, Level.Warning, Level.Error] {
+		let count = tally.byLevel.get(level) ?? 0
+		print("  ${level.label.padEnd(8)}${count.formatted(width: 9)}  ${percent(count).formatted(places: 1)}%")
+	}
+	if tally.skipped > 0 {
+		print("  (${tally.skipped} lines weren't in the expected form)")
+	}
+
+	let errorShare = percent(tally.byLevel.get(Level.Error) ?? 0)
+	let health = match errorShare {
+		share if share >= 5.0 => "unhealthy"
+		share if share >= 1.0 => "worth a look"
+		_ => "healthy"
+	}
+	print("Errors are ${errorShare.formatted(places: 2)}% of lines: ${health}.")
+
+	print("Most common errors:")
+	for count in highest(tally.errors, count: top) {
+		print("  ${count.total.formatted(width: 7)}  ${count.key}")
+	}
+
+	if busiestHour(tally.byHour) is (hour, count) {
+		print("Busiest hour: ${hour.formatted(width: 2, fill: "0")}:00, with ${count} lines.")
+	}
+}
+
+/// Reads `--top N` from the command line. The first argument is the program's own name.
+fn options(args: List<String>) -> Int else UsageError {
+	var top = 5
+	var i = 1
+	while i < args.length {
+		let arg = args[i]
+		if arg == "--" {
+			break
+		}
+		if arg != "--top" {
+			fail UsageError.Unknown(argument: arg)
+		}
+		let value = args.get(i + 1) ?? fail UsageError.MissingValue(option: arg)
+		top = Int.parse(value) catch _ {
+			fail UsageError.NotNumeric(value:)
+		}
+		i += 2
+	}
+	return top
+}
+
+/// Sends every line of every `.log` file beneath `logs`, then closes the channel. Gives the
+/// number of files read and their total size in bytes.
+fn readAll(logs: Dir, out: Channel<String>) -> (Int, Int) else SummaryError {
+	defer out.close()
+	var files = 0
+	var bytes = 0
+	for entry in try logs.walk() {
+		if entry.isDirectory or not entry.path.name.endsWith(".log") {
+			continue
+		}
+		files++
+		bytes += entry.size
+		let file = try logs.open(entry.path)
+		defer file.close()
+		for line in try io.lines(file) {
+			try out.send(line)
+		}
+	}
+	return (files, bytes)
+}
+
+enum SummaryError implements Error {
+	Files(from FileError)
+	Io(from IoError)
+	Stopped(from ChannelError)
+
+	override get message: String => "couldn't summarise the logs"
+}
+
+/// A command line this program doesn't understand.
+enum UsageError implements Error {
+	Unknown(argument: String)
+	MissingValue(option: String)
+	NotNumeric(value: String)
+
+	override get message: String => match this {
+		UsageError.Unknown(argument:) => "unknown argument ${argument}"
+		UsageError.MissingValue(option:) => "${option} needs a value"
+		UsageError.NotNumeric(value:) => "not a whole number: ${value}"
+	}
+}
+
+enum Level {
+	Debug
+	Info
+	Warning
+	Error
+
+	get label: String => match this {
+		Level.Debug => "debug"
+		Level.Info => "info"
+		Level.Warning => "warning"
+		Level.Error => "error"
+	}
+}
+
+record Entry {
+	hour: Int
+	level: Level
+	message: String
+}
+
+/// Reads one line, or gives `null` for a blank line, a comment or a line in another form.
+fn parse(line: String) -> Entry? {
+	if line.trim().isEmpty or line.startsWith("#") {
+		return null
+	}
+	let parts = line.split(" ", limit: 3)
+	let timestamp = parts.get(0) ?? return null
+	let level = parseLevel(parts.get(1) ?? "") ?? return null
+	if timestamp.length < 13 {
+		return null
+	}
+	let hour = Int.parse(timestamp.slice(from: 11, until: 13)) catch _ {
+		return null
+	}
+	return Entry(hour:, level:, message: (parts.get(2) ?? "").trim() ?: "(no message)")
+}
+
+fn parseLevel(word: String) -> Level? {
+	return match word {
+		"DEBUG" => Level.Debug
+		"INFO" => Level.Info
+		"WARN" or "WARNING" => Level.Warning
+		"ERROR" => Level.Error
+		_ => null
+	}
+}
+
+/// Counts as the lines go by.
+record Tally {
+	var byLevel: Map<Level, Int>
+	var errors: Map<String, Int>
+	var byHour: Map<Int, Int>
+	var lines: Int
+	var skipped: Int
+
+	mut fn skip() {
+		this.skipped++
+	}
+
+	mut fn add(entry: Entry) {
+		this.lines++
+		this.byLevel.set(entry.level, (this.byLevel.get(entry.level) ?? 0) + 1)
+		this.byHour.set(entry.hour, (this.byHour.get(entry.hour) ?? 0) + 1)
+		if entry.level == Level.Error {
+			this.errors.set(entry.message, (this.errors.get(entry.message) ?? 0) + 1)
+		}
+	}
+}
+
+/// How many times one key was counted.
+record Count<K> {
+	key: K
+	total: Int
+}
+
+/// The `count` keys counted most often, most first.
+fn highest<K: Hashable>(counts: Map<K, Int>, named count: Int) -> List<Count<K>> {
+	var all: List<Count<K>> = []
+	for (key, total) in counts {
+		all.push(Count(key:, total:))
+	}
+	return all.sortedBy(fn(c) => c.total, descending: true).take(count).toList()
+}
+
+/// The hour with the most lines, and how many; `null` when there were none.
+fn busiestHour(byHour: Map<Int, Int>) -> (Int, Int)? {
+	let best = highest(byHour, count: 1).first ?? return null
+	return (best.key, best.total)
+}

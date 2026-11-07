@@ -1,0 +1,10 @@
+{
+	"name": "nib-tools",
+	"private": true,
+	"type": "module",
+	"description": "Checks Nib source: a parser and a name checker. No dependencies; needs Node 23.6 or later.",
+	"scripts": {
+		"check": "node src/cli.ts check ../../examples",
+		"test": "node test/run.ts"
+	}
+}

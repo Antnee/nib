@@ -1,0 +1,153 @@
+#!/usr/bin/env nib
+
+// Prints a three-day forecast for a place, from the Open-Meteo API:
+//
+//   nib run examples/weather/weather.nibl 52.95 -1.15
+//
+// A weather service under load often answers a moment later, so a call that fails in a way
+// that might pass is tried again, after a pause that doubles each time.
+
+import std.app.{Env}
+import std.http.{ApiClient, BodyError, HttpError, Response, Status}
+import std.io.{IoError}
+import std.json.{@json}
+import std.time.{Clock, Date, Duration}
+
+pub fn main(env: Env) -> Int else IoError {
+	let place = parsePlace(env.args) ?? {
+		try env.stderr.writeLine("Usage: weather LATITUDE LONGITUDE, such as: weather 52.95 -1.15")
+		return 2
+	}
+	let api = env.http.client(base: url"https://api.open-meteo.com/v1", timeout: Duration.of(seconds: 10))
+	let days = forecast(api, env.clock, place) catch err {
+		let problem = match err {
+			ForecastError.Http(HttpError.Connect) or ForecastError.Http(HttpError.Timeout) =>
+				"The weather service didn't answer. Try again later."
+			ForecastError.Http(cause) if isTemporary(cause) => "The weather service is busy. Try again later."
+			ForecastError.Http => "The weather service refused the request."
+			ForecastError.Body => "The weather service's answer couldn't be read."
+		}
+		try env.stderr.writeLine(problem)
+		return 1
+	}
+
+	print("Date        Low    High   Rain")
+	for day in days {
+		let low = "${day.low.formatted(places: 1)}°".padEnd(7)
+		let high = "${day.high.formatted(places: 1)}°".padEnd(7)
+		print("${day.date}  ${low}${high}${day.rainChance}%")
+	}
+	return 0
+}
+
+record Place {
+	latitude: Decimal
+	longitude: Decimal
+}
+
+/// Reads the latitude and longitude, or gives `null` if they're missing or out of range.
+fn parsePlace(args: List<String>) -> Place? {
+	let latitude = Decimal.parse(args.get(1) ?? return null) catch _ {
+		return null
+	}
+	let longitude = Decimal.parse(args.get(2) ?? return null) catch _ {
+		return null
+	}
+	if latitude < -90 or latitude > 90 or longitude < -180 or longitude > 180 {
+		return null
+	}
+	return Place(latitude:, longitude:)
+}
+
+record Day {
+	date: Date
+	low: Float
+	high: Float
+	rainChance: Int
+}
+
+/// The API's answer: one list per measure, a value for each day, in the same order.
+@json
+record ForecastBody {
+	daily: DailyLists
+}
+
+@json
+record DailyLists {
+	time: List<Date>
+
+	@json(key: "temperature_2m_min")
+	lows: List<Float>
+
+	@json(key: "temperature_2m_max")
+	highs: List<Float>
+
+	@json(key: "precipitation_probability_max")
+	rainChances: List<Int>
+}
+
+enum ForecastError implements Error {
+	Http(from HttpError)
+	Body(from BodyError)
+
+	override get message: String => "couldn't get the forecast"
+}
+
+fn forecast(api: ApiClient, clock: Clock, place: Place) -> List<Day> else ForecastError {
+	let query = [
+		"latitude": "${place.latitude}",
+		"longitude": "${place.longitude}",
+		"daily": "temperature_2m_min,temperature_2m_max,precipitation_probability_max",
+		"forecast_days": "3",
+		"timezone": "auto",
+	]
+	let response = try withRetries(
+		clock,
+		attempts: 4,
+		pause: Duration.of(milliseconds: 500),
+		call: fn() => try api.get(url"forecast", query:),
+	)
+	let lists = (try response.body.json<ForecastBody>()).daily
+
+	// Lists that disagree in length are trimmed to the shortest.
+	let count = [lists.time.length, lists.lows.length, lists.highs.length, lists.rainChances.length].min() ?? 0
+	var days: List<Day> = []
+	for i in 0..<count {
+		days.push(Day(date: lists.time[i], low: lists.lows[i], high: lists.highs[i], rainChance: lists.rainChances[i]))
+	}
+	return days
+}
+
+/// Makes a call, and makes it again if it fails in a way that might pass next time, up to
+/// `attempts` times in all. The pause before each retry is twice the one before.
+fn withRetries(
+	clock: Clock,
+	named attempts: Int,
+	named pause: Duration,
+	named call: fn() -> Response else HttpError,
+) -> Response else HttpError {
+	var wait = pause
+	var attempt = 1
+	while attempt < attempts {
+		match call() {
+			Result.Ok(response) => return response
+			Result.Err(err) if isTemporary(err) => {
+				clock.sleep(wait)
+				wait = wait.times(2)
+				attempt++
+			}
+			Result.Err(err) => fail err
+		}
+	}
+	// The last attempt's failure is the one passed on.
+	return try call()
+}
+
+/// Whether a failure might not happen again: the service was unreachable, slow or busy.
+fn isTemporary(err: HttpError) -> Bool {
+	return match err {
+		HttpError.Connect or HttpError.Timeout => true
+		HttpError.UnexpectedStatus(response:) => response.status == Status.TOO_MANY_REQUESTS or response.status >= 500
+		HttpError.Tls or HttpError.TooLarge or HttpError.Refused => false
+	}
+}

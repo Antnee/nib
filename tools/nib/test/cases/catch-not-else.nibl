@@ -1,0 +1,7 @@
+// expect: error: a failure is handled with `catch`, as in `… catch err { … }`
+fn quantity(text: String) -> Int {
+	let n = Int.parse(text) else err {
+		return 0
+	}
+	return n
+}

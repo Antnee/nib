@@ -1,0 +1,15 @@
+// expect: ok
+fn greet(name: String, named loud: Bool) -> String {
+	return loud ? name.toUpperCase() : name
+}
+
+fn check(passed: Bool, message: String) {
+	if not passed {
+		print(message)
+	}
+}
+
+pub fn main() {
+	print(greet("Ann", loud: true))
+	check(greet("Ann", loud: false) == "Ann", "greet changed the name")
+}

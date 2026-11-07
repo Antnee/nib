@@ -1,0 +1,143 @@
+import std.io.{IoError, Writer}
+
+/// A relative or absolute file path, written as a `path"…"` literal. Only values that
+/// can't contain `/`, `..` or NUL can be interpolated into one, so a literal can't climb
+/// out of the directory it is used in.
+///
+/// ```
+/// let name = path"sales-${day}.csv.gz"
+/// ```
+pub record Path implements Stringable {
+	/// The last component, such as `access.log` in `logs/2026/access.log`.
+	get name: String
+
+	/// This path followed by `other`.
+	fn join(other: Path) -> Path
+
+	/// The path as text, with `/` between components, for people to read.
+	override fn toString() -> String
+}
+
+/// One component of a path: never empty, and never `/`, `..` or NUL. Text from outside
+/// the program becomes part of a path only through this type or `Dir.resolveWithin`.
+pub record PathSegment implements Parseable, Stringable {
+	/// Checks that `text` is a single safe component.
+	override static fn parse(text: String) -> PathSegment else PathError
+
+	/// The component as text.
+	override fn toString() -> String
+}
+
+/// A directory the host has granted the app, such as `env.dir("logs")`. Everything opened
+/// through it stays beneath it, even when a path contains a symlink.
+pub class Dir {
+	/// A file beneath this directory. Nothing is opened until the file is used.
+	fn file(path: Path) -> File
+
+	/// The contents of a file beneath this directory.
+	fn read(path: Path) -> Bytes else FileError
+
+	/// Writes a file beneath this directory, replacing it if it exists.
+	///
+	/// ```
+	/// try dir.write(path"sales-${day}.csv.gz", bytes)
+	/// ```
+	fn write(path: Path, data: Bytes) else FileError
+
+	/// Opens a file beneath this directory to read a chunk at a time, so a large file never has
+	/// to fit in memory. It stays open until the unit of work ends, or until `close`.
+	///
+	/// ```
+	/// let lines = io.lines(try dir.open(path"access.log"))
+	/// ```
+	@opens
+	fn open(path: Path) -> FileReader else FileError
+
+	/// Starts writing a file beneath this directory. The file appears, replacing any older
+	/// one, only when `close` succeeds; until then it's written under a temporary name, and
+	/// if it's never closed it's discarded.
+	@opens
+	fn create(path: Path) -> FileWriter else FileError
+
+	/// Every file and directory beneath this one, a single entry at a time, so a large tree
+	/// is never loaded whole.
+	fn walk() -> Iterable<DirEntry, IoError>
+
+	/// Turns untrusted text such as `reports/2026/october.csv` into a path, failing if it
+	/// would lead outside this directory.
+	fn resolveWithin(text: String) -> Path else PathError
+}
+
+/// A file beneath a granted directory, from `Dir.file`.
+pub class File {
+	/// The file's path, relative to its directory.
+	get path: Path
+}
+
+/// A file opened for reading, from `Dir.open`: its contents a chunk at a time.
+pub class FileReader implements Iterable<Bytes, IoError> {
+	/// Closes the file before the unit of work ends.
+	fn close()
+}
+
+/// A file being written, from `Dir.create`. It appears only when `close` succeeds.
+pub class FileWriter implements Writer {}
+
+/// One file or directory found by `Dir.walk`.
+pub record DirEntry {
+	/// Its path, relative to the directory walked.
+	path: Path
+
+	/// Whether it's a directory.
+	isDirectory: Bool
+
+	/// Its size in bytes; zero for a directory.
+	size: Int
+}
+
+/// Files that ship with the build, declared in the manifest's `[files]`, such as a site's
+/// stylesheets and scripts. They're read-only and the same in every environment, so they
+/// always match the code that refers to them.
+///
+/// The host decides how they ship: inside the program, or as a directory beside it. Either
+/// way, the build fixes which files there are. A development run reads them from the
+/// package's own directory, so an edit shows without a rebuild.
+///
+/// ```
+/// Route.files("/assets", env.files("assets"))
+/// ```
+pub class Files {
+	/// Every file's path, relative to the top of the set.
+	get paths: List<Path>
+
+	/// The contents of the file at `path`. Fails with `FileError.NotFound` when the build
+	/// has no such file.
+	fn read(path: Path) -> Bytes else FileError
+}
+
+/// What opening, reading or writing a file can fail with.
+pub enum FileError implements Error {
+	/// There is no file at the path.
+	NotFound(path: Path)
+
+	/// The host doesn't allow this access.
+	PermissionDenied(path: Path)
+
+	/// The operating system reported another failure.
+	Io(reason: String)
+
+	/// What went wrong.
+	override get message: String
+}
+
+/// Why text couldn't become a path.
+pub enum PathError implements Error {
+	/// The text is empty, or contains `/` (in a single segment), `..` or NUL.
+	Invalid(text: String)
+
+	/// The path would lead outside its directory.
+	OutsideDirectory(text: String)
+
+	/// What went wrong.
+	override get message: String
+}

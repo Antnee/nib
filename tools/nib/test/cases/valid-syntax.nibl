@@ -1,0 +1,126 @@
+// expect: ok
+// Syntax the demo doesn't use, so the parser is tested on it too.
+
+alias Count = Int
+
+attribute deprecated2 {
+	since: String
+	replacement: String?
+}
+
+record Pair<A, B> {
+	first: A
+	second: B
+
+	fn swapped() -> Pair<B, A> {
+		return Pair(first: this.second, second: this.first)
+	}
+}
+
+interface Shape {
+	get area: Decimal
+	fn scaled(by: Decimal) -> This
+}
+
+enum Tree<T> {
+	Leaf
+	Node(left: Tree<T>, value: T, right: Tree<T>)
+}
+
+fn largest<T: Comparable>(items: List<T>) -> T? {
+	var best: T? = null
+	for item in items {
+		if best is null or item > best {
+			best = item
+		}
+	}
+	return best
+}
+
+fn loops(limit: Int) -> Int {
+	var total = 0
+	outer: for i in 1..limit {
+		for j in 0..<i {
+			if j == 3 {
+				continue outer
+			}
+			if i * j > 100 {
+				break outer
+			}
+			total += i * j
+		}
+	}
+	var n = 0
+	do {
+		n++
+	} while n < 10
+	while true {
+		break
+	}
+	return total + n
+}
+
+fn operators(a: Int, named b: Int, name: String) -> (Int, Bool) {
+	let bits = (a & b) | (a ^ ~b) << 2
+	let shifted = bits >> 1
+	let q = a div b + a mod b
+	let label = name ?: "anonymous"
+	let inRange = a in 0..10
+	let negative = -a
+	return (shifted + q + negative + label.length, inRange and not (a == b))
+}
+
+fn closures(xs: List<Int>) -> Int {
+	var count = 0
+	let bump = fn() use (mut count) { count++ }
+	let double = fn(n: Int) -> Int => n * 2
+	let total = xs.map(double).map(fn(n) {
+		let m = n + 1
+		return m
+	})
+	bump()
+	return total.length
+}
+
+fn strings(who: String) -> String {
+	let escaped = "tab\tquote\" dollar\$ brace${who} \u{1F600}"
+	let raw = r"C:\path\${not interpolated}"
+	let block = """
+		Dear ${who},
+			indented line
+		Bye
+		"""
+	let nested = "outer ${"inner ${who}"}"
+	return "${escaped}${raw}${block}${nested}"
+}
+
+fn patterns(t: Tree<Int>, pair: (Int, String?)) -> String {
+	let (count, word) = pair
+	let label: String
+	match t {
+		Tree.Leaf => label = "leaf"
+		Tree.Node(left: Tree.Leaf, value: v) if v > 10 => label = "big ${v}"
+		Tree.Node(value: 0) => label = "zero"
+		Tree.Node => {
+			let s = "node"
+			label = s
+		}
+	}
+	if word is not null and count > 0 {
+		return label
+	}
+	return "${label} ${word ?? ""}"
+}
+
+/* A block comment /* with a nested one */ still ends here. */
+enum Stop implements Error {
+	Now
+
+	override get message: String => "stopped"
+}
+
+fn defers() else Stop {
+	defer print("done")
+	defer else print("failed")
+	fail Stop.Now
+}

@@ -1,0 +1,12 @@
+// expect: ok
+// A field with a blind index says how it's encrypted as well.
+import std.crypto.{BlindIndex}
+import std.db.{@db}
+
+const EMAIL_INDEX = BlindIndex(name: "users.email", column: "email_idx", keyring: "pii")
+
+@db(table: "users")
+record User {
+	@db(encrypt: "pii", blindIndex: EMAIL_INDEX)
+	email: String
+}

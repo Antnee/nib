@@ -1,0 +1,41 @@
+// expect: ok
+// A handler or guard takes the request only when it reads it.
+import std.http.{@guard, @path, Request, Response, Route, Routes}
+
+type NoteId: Int implements Parseable
+
+record Note {
+	id: NoteId
+}
+
+class Notes {
+	fn find(@path noteId: NoteId) -> Note {
+		return Note(id: noteId)
+	}
+
+	fn home() -> Response {
+		return Response.notFound()
+	}
+
+	fn show(@guard note: Note) -> Response {
+		return Response.text("note ${note.id}")
+	}
+
+	fn search(req: Request) -> Response {
+		return Response.text(req.query.get("q") ?? "")
+	}
+}
+
+class Services {
+	construct(pub notes: Notes) {}
+}
+
+fn routes() -> Routes<Services> {
+	return Routes(routes: [
+		Route.get("/", fn(app) => app.notes.home),
+		Route.get("/search", fn(app) => app.notes.search),
+		Route.group(prefix: "/notes/{noteId}", requiring: fn(app) => app.notes.find, routes: [
+			Route.get("", fn(app) => app.notes.show),
+		]),
+	])
+}

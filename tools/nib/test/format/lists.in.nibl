@@ -1,0 +1,17 @@
+fn send(client: Client, message: MailMessage) -> Void else MailError {
+	try client.send(Message(from: "Shop <hello@shop.example>", to: message.to, subject: message.subject, html: message.html))
+	log.error("refund failed; needs reconciliation", fields: ["orderId": order.id, "paymentId": payment.id, "error": err])
+	let short = Money(
+		amount: 1,
+		currency: Currency.Gbp,
+	)
+	return routes([
+		Route.get("/", fn(app) => app.site.home),
+
+		Route.get("/sign-up", fn(app) => app.auth.showSignUp),
+	])
+}
+
+fn field(state: FormState, name: String, label: String, kind: InputKind, named invalid: String, named hint: String? = null) -> Html {
+	return html""
+}

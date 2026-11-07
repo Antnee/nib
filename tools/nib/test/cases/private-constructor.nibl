@@ -1,0 +1,12 @@
+// expect: only error: `Counter`'s constructor is private, so only its own code can build one: use `Counter.starting(…)`
+class Counter {
+	private construct(private var count: Int) {}
+
+	static fn starting() -> Counter {
+		return new Counter(0)
+	}
+}
+
+fn make() -> Counter {
+	return new Counter(5)
+}

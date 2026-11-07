@@ -1,0 +1,22 @@
+// expect: ok
+/// A shape with an area.
+pub interface Shape {
+	get area: Decimal
+
+	/// Whether it has no area. A default, so it keeps its body.
+	get isEmpty: Bool => this.area == 0.0
+}
+
+/// A circle.
+pub record Circle implements Shape {
+	/// The unit circle.
+	static get unit: Circle
+
+	radius: Decimal
+
+	override get area: Decimal
+	static fn of(named radius: Decimal) -> Circle
+}
+
+/// Doubles a number.
+pub fn double(n: Int) -> Int

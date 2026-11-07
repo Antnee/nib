@@ -1,0 +1,13 @@
+// expect: ok
+fn digits(text: String) -> Int else ParseError {
+	let n = try Int.parse(text)
+	return n.formatted().length
+}
+
+fn sum(a: String, b: String) -> Int else ParseError {
+	return try Int.parse(a) + try Int.parse(b)
+}
+
+fn isZero(text: String) -> Bool else ParseError {
+	return try Int.parse(text) == 0
+}

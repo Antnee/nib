@@ -1,0 +1,14 @@
+// expect: error: is marked `override`, but none of the interfaces it implements has a `transactionl`; did you mean `transactional`?
+interface Step {
+	fn run()
+
+	get transactional: Bool => true
+}
+
+record Reindex implements Step {
+	override fn run() {
+		print("reindexing")
+	}
+
+	override get transactionl: Bool => false
+}

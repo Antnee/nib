@@ -1,0 +1,12 @@
+// expect: only error: are different types, so they're never equal: to compare their text, use `matches`
+// Two kinds of secret compare their text with `matches`, in the same time wherever they differ.
+@sensitive
+type Password: String
+
+@sensitive
+type Confirmation: String
+
+fn same(password: Password, confirmation: Confirmation) -> Bool {
+	let fine = password.matches(confirmation)
+	return fine and password == confirmation
+}

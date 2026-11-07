@@ -1,0 +1,6 @@
+// expect: ok
+// `==` on secrets takes the same time wherever they differ, so it's allowed.
+
+fn same(a: Secret, b: Secret) -> Bool {
+	return a == b
+}

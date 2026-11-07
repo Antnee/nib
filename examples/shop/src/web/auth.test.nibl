@@ -1,0 +1,69 @@
+import std.crypto.passwords
+import std.http.{Method, Request, Status}
+import std.locale.{Locale}
+import std.testing with {FakeClock, InMemoryRateLimiter}
+import std.time.{Instant}
+import shop.integrations.{Analytics, Event}
+import shop.ui.{PageContext}
+import shop.users
+
+// The handlers are called directly, with a request built for the test. A request's session
+// is a handle, so what a handler writes to it can be read back afterwards.
+
+fn testHandlers(accounts: users.Accounts) -> AuthHandlers {
+	let clock = FakeClock.at(Instant.parse("2026-09-15T10:00:00Z").orPanic("a fixed instant"))
+	let analytics = new Analytics {
+		override fn track(event: Event) {}
+	}
+	return new AuthHandlers(accounts:, limiter: new InMemoryRateLimiter(clock), analytics:)
+}
+
+fn signedOut(req: Request) -> PageContext {
+	return PageContext(
+		user: null,
+		csrf: req.csrf,
+		notice: null,
+		locale: Locale.parse("en-GB").orPanic("a language tag"),
+	)
+}
+
+fn signInRequest(password: String) -> Request {
+	return testing.request(Method.Post, "/sign-in", form: ["email": "ann@example.com", "password": password])
+}
+
+test "the right password starts a session" {
+	let f = users.fixture()
+	let hash = passwords.hash(users.testPassword("correct horse battery"), testing.FAST_PASSWORD_POLICY)
+	let ann = f.users.insert(users.testEmail("ann@example.com"), hash, confirmed: true)
+	let req = signInRequest("correct horse battery")
+
+	let response = try testHandlers(f.accounts).signIn(req, signedOut(req))
+
+	expect response.status == Status.SEE_OTHER
+	expect req.session.get(SIGNED_IN_USER) == ann.id
+}
+
+test "a wrong password shows the form again, and signs no one in" {
+	let f = users.fixture()
+	let hash = passwords.hash(users.testPassword("correct horse battery"), testing.FAST_PASSWORD_POLICY)
+	let _ = f.users.insert(users.testEmail("ann@example.com"), hash, confirmed: true)
+	let req = signInRequest("incorrect horse battery")
+
+	let response = try testHandlers(f.accounts).signIn(req, signedOut(req))
+
+	expect response.status == Status.UNPROCESSABLE_CONTENT
+	expect req.session.get(SIGNED_IN_USER) is null
+}
+
+test "a sixth attempt in a minute from one address is refused" {
+	let handlers = testHandlers(users.fixture().accounts)
+	for _ in 0..<5 {
+		let req = signInRequest("a guess")
+		let _ = try handlers.signIn(req, signedOut(req))
+	}
+	let req = signInRequest("another guess")
+
+	let response = try handlers.signIn(req, signedOut(req))
+
+	expect response.status == Status.TOO_MANY_REQUESTS
+}

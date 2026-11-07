@@ -1,0 +1,15 @@
+// expect: error: `run` can't fail, so this `try` has nowhere to pass a `LoadError`: add `else LoadError` to its signature
+enum LoadError implements Error {
+	Missing
+	Broken
+
+	override get message: String => "load failed"
+}
+
+fn load(path: String) -> String else LoadError {
+	return path
+}
+
+fn run() -> String {
+	return try load("a")
+}

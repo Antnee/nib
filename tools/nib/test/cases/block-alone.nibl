@@ -1,0 +1,6 @@
+// expect: error: a block can't stand on its own
+fn f() {
+	{
+		print("hi")
+	}
+}

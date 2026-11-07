@@ -1,0 +1,8 @@
+// expect: error: a `User` isn't `Stringable`, so it can't go in `${…}`
+record User {
+	name: String
+}
+
+fn greet(user: User) -> String {
+	return "Hello, ${user}"
+}

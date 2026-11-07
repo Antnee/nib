@@ -1,0 +1,5 @@
+import greet.{Counter}
+
+pub fn main() {
+	let _ = new Counter()
+}

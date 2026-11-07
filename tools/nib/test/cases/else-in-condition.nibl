@@ -1,0 +1,6 @@
+// expect: error: isn't allowed in the condition of `if`
+fn check(f: fn() -> Bool else String) {
+	if f() catch e { return } {
+		print("yes")
+	}
+}

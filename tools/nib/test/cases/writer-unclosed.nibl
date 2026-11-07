@@ -1,0 +1,15 @@
+// expect: warning: `out` is never closed, so what's written to it is discarded
+import std.files.{Dir, FileError}
+import std.io.{IoError}
+
+enum SaveError implements Error {
+	Files(from FileError)
+	Io(from IoError)
+
+	override get message: String => "couldn't save"
+}
+
+fn save(dir: Dir, data: Bytes) -> Void else SaveError {
+	let out = try dir.create(path"report.txt")
+	try out.write(data)
+}

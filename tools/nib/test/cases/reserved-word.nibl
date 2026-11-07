@@ -1,0 +1,4 @@
+// expect: error: is a reserved word
+fn f() {
+	let match = 1
+}

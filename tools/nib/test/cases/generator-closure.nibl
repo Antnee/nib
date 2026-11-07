@@ -1,0 +1,7 @@
+// expect: error: `yield` gives the next item of a generator
+fn outer() -> Iterable<Int> {
+	let f = fn() {
+		yield 1
+	}
+	yield 2
+}

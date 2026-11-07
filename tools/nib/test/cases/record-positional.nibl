@@ -1,0 +1,9 @@
+// expect: only error: a record is built from named fields, `Point(name: value)`
+record Point {
+	x: Int
+	y: Int
+}
+
+fn origin() -> Point {
+	return Point(0, 0)
+}

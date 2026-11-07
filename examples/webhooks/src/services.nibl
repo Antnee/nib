@@ -1,0 +1,20 @@
+import std.app.{Env}
+import std.time.{Clock}
+
+record Config {
+	signingKey: Secret
+}
+
+/// Built afresh for every message, so nothing from one delivery is seen by the next.
+class Services {
+	construct(private env: Env, private config: Config) {}
+
+	private lazy clock: Clock = this.env.clock
+
+	lazy delivery: WebhookDelivery = new WebhookDelivery(
+		subscriptions: new SqlSubscriptions(this.env.db("main")),
+		transport: new HttpTransport(this.env.http),
+		clock: this.clock,
+		signingKey: this.config.signingKey,
+	)
+}

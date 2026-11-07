@@ -1,0 +1,5 @@
+// expect: error: `with` is followed by the names to import, in braces
+// The names after `with` go in braces, as after `.`.
+import std.json with JsonCodec
+
+fn f() {}

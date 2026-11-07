@@ -1,0 +1,44 @@
+import std.crypto.passwords.{PasswordHash}
+import std.time.{Instant}
+import shop.core.{RepositoryError}
+
+/// Owned by the domain; implemented by `storage.SqlUserRepository` and, in tests, by
+/// `InMemoryUserRepository`.
+interface UserRepository {
+	fn find(id: UserId) -> User? else RepositoryError
+	fn findByEmail(email: Email) -> User? else RepositoryError
+
+	/// The address's `EmailKey`, whether or not an account has it.
+	fn emailKey(email: Email) -> EmailKey else RepositoryError
+
+	fn findByEmailKey(key: EmailKey) -> User? else RepositoryError
+
+	/// Creates the user, unless the email is already registered. It does the same work either
+	/// way, so sign-up takes as long for a registered address as for a new one. Uses
+	/// `on conflict do nothing` rather than catching a unique violation, which would abort
+	/// the surrounding Postgres transaction.
+	fn createIfAbsent(email: Email, passwordHash: PasswordHash, named at: Instant) -> Creation else RepositoryError
+
+	/// Sets the user's password hash and confirmation time, and nothing else. The email
+	/// address has its own blind index, so a change of address would need its own method.
+	fn saveCredentials(id: UserId, named passwordHash: PasswordHash, named confirmedAt: Instant?) else RepositoryError
+
+	/// Replaces the password hash with `upgraded`, but only while the stored hash is still
+	/// `current`, so an upgrade computed from an older read can't undo a password reset.
+	/// Returns whether it replaced it.
+	fn upgradePasswordHash(
+		id: UserId,
+		named current: PasswordHash,
+		named upgraded: PasswordHash,
+	) -> Bool else RepositoryError
+
+	/// Signs the user out of every session by increasing `sessionVersion`. It's increased in
+	/// place rather than saved from a `User`, so a save from an older copy can't undo it.
+	fn endSessions(id: UserId) else RepositoryError
+}
+
+/// What `UserRepository.createIfAbsent` did.
+enum Creation {
+	Created(userId: UserId)
+	AlreadyRegistered(userId: UserId)
+}

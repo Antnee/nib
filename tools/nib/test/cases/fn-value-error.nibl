@@ -1,0 +1,17 @@
+// expect: error: this is a `fn(String) -> String else LoadError`, but `f` needs a `fn(String) -> String else ParseError`
+enum LoadError implements Error {
+	Missing
+	Broken
+
+	override get message: String => "load failed"
+}
+
+fn load(path: String) -> String else LoadError {
+	return path
+}
+
+fn retry(f: fn(String) -> String else ParseError) {}
+
+fn run() {
+	retry(load)
+}

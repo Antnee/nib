@@ -1,0 +1,4 @@
+// expect: error: doesn't belong in an interface
+interface Shape {
+	override fn area() -> Float
+}

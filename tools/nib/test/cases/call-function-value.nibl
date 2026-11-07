@@ -1,0 +1,4 @@
+// expect: error: `twice` takes 1 argument, but this call passes 2
+fn apply(twice: fn(Int) -> Int) -> Int {
+	return twice(1, 2)
+}

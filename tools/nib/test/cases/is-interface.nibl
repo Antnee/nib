@@ -1,0 +1,17 @@
+// expect: error: this is a `Shape`, an interface, so `is` can't test which type it holds
+interface Shape {
+	get area: Decimal
+}
+
+record Square implements Shape {
+	side: Decimal
+
+	override get area: Decimal => this.side
+}
+
+fn side(shape: Shape) -> Decimal {
+	if shape is Square square {
+		return square.side
+	}
+	return 0
+}

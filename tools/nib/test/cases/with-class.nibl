@@ -1,0 +1,8 @@
+// expect: error: `with` copies a record, but `Counter` is a class, which changes through its own methods
+class Counter {
+	var count: Int = 0
+}
+
+fn reset(counter: Counter) -> Counter {
+	return counter with (count: 0)
+}

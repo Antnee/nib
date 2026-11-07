@@ -1,0 +1,126 @@
+import std.codec.{Codable, Codec}
+import std.time.{Instant}
+
+/// A UUID (RFC 9562), of any version. Make new ones with `Uuids`, which code is given as it
+/// is given a `Clock`; `uuids.next()` makes the usual kind, a version 7.
+///
+/// A database stores one in a `uuid` column on Postgres, a `binary(16)` column on MySQL and a
+/// `blob` on SQLite. JSON and forms write it as text, such as
+/// `0192f3a4-7b1c-7d2e-9f3a-5b6c7d8e9f0a`.
+///
+/// UUIDs compare by their bytes, so version 7s sort in the order they were made.
+///
+/// ```
+/// type OrderId: Uuid
+///
+/// fn newOrderId(uuids: Uuids) -> OrderId {
+/// 	return OrderId(uuids.next())
+/// }
+/// ```
+pub record Uuid implements Comparable, Parseable, Stringable, Codable<Codec> {
+	/// The UUID whose bits are all zero.
+	const NIL: Uuid
+
+	/// The UUID whose bits are all one.
+	const MAX: Uuid
+
+	/// The namespace for names that are domain names, for `v3` and `v5`.
+	const NAMESPACE_DNS: Uuid
+
+	/// The namespace for names that are URLs.
+	const NAMESPACE_URL: Uuid
+
+	/// The namespace for names that are ISO object identifiers.
+	const NAMESPACE_OID: Uuid
+
+	/// The namespace for names that are X.500 distinguished names.
+	const NAMESPACE_X500: Uuid
+
+	/// Reads a UUID of any version, in either case, such as
+	/// `0192F3A4-7B1C-7D2E-9F3A-5B6C7D8E9F0A`. Braces and a `urn:uuid:` prefix are accepted.
+	override static fn parse(text: String) -> Uuid else ParseError
+
+	/// Reads a UUID from its 16 bytes. Fails if `bytes` isn't 16 bytes long.
+	static fn fromBytes(bytes: Bytes) -> Uuid else ParseError
+
+	/// The version 5 UUID for `name` in `namespace`: a SHA-1 hash of the two, so the same name
+	/// always gives the same UUID.
+	///
+	/// ```
+	/// let id = Uuid.v5(namespace: Uuid.NAMESPACE_URL, name: "https://shop.example/")
+	/// ```
+	static fn v5(named namespace: Uuid, named name: String) -> Uuid
+
+	/// The version 3 UUID for `name` in `namespace`, which uses MD5 where version 5 uses
+	/// SHA-1. Use it only to match UUIDs another system has already made; otherwise use `v5`.
+	static fn v3(named namespace: Uuid, named name: String) -> Uuid
+
+	/// A version 8 UUID, whose layout you design: `bytes`, with the version and variant bits
+	/// set. Panics if `bytes` isn't 16 bytes long.
+	static fn v8(bytes: Bytes) -> Uuid
+
+	/// The version, from 1 to 8, or 0 for `NIL` and 15 for `MAX`.
+	get version: Int
+
+	/// The time the UUID holds, for versions 1, 6 and 7, or `null` for the others. It's the
+	/// time whatever made the UUID wrote into it, so trust it only as far as you trust that.
+	///
+	/// A version 2 holds only part of its time, so it gives `null` too.
+	get timestamp: Instant?
+
+	/// The 16 bytes.
+	get bytes: Bytes
+
+	/// The UUID as lower-case text, with dashes.
+	override fn toString() -> String
+}
+
+/// Makes UUIDs. Ask for one, as `env.uuids`, instead of creating it, so tests can use a
+/// predictable one (`FakeUuids` in `std.testing`).
+pub interface Uuids {
+	/// A version 7 UUID: the time in milliseconds, then random bits. Use it unless there's a
+	/// reason not to. Made in time order, so as a key it adds to the end of an index, where a
+	/// random key would scatter writes through it.
+	///
+	/// It shows when it was made. When that mustn't show, such as in a user's ID, use
+	/// `random`.
+	fn next() -> Uuid
+
+	/// A version 4 UUID: random bits, from the operating system's secure generator.
+	fn random() -> Uuid
+
+	/// A version 1 UUID, for systems that still need them: the time, a clock sequence, and
+	/// `node`. The node is given, never read from the machine, so it can't reveal a network
+	/// card's address.
+	fn v1(named node: UuidNode) -> Uuid
+
+	/// A version 6 UUID: a version 1 with its time in the order that sorts, for systems that
+	/// are moving off version 1.
+	fn v6(named node: UuidNode) -> Uuid
+
+	/// A version 2 (DCE security) UUID, for systems that still need them: a version 1 whose
+	/// time is partly replaced by `identifier`, such as a user or group ID, in `domain`.
+	fn v2(named domain: DceDomain, named identifier: Int, named node: UuidNode) -> Uuid
+}
+
+/// The 48-bit node of a version 1, 2 or 6 UUID. Old systems often give each server its own,
+/// from config.
+pub record UuidNode implements Parseable, Stringable, Codable<Codec> {
+	/// Reads 12 hexadecimal digits, with or without colons, such as `0a:1b:2c:3d:4e:5f`.
+	override static fn parse(text: String) -> UuidNode else ParseError
+
+	/// The node as 12 lower-case hexadecimal digits.
+	override fn toString() -> String
+}
+
+/// What a version 2 UUID's identifier is.
+pub enum DceDomain {
+	/// A user's ID.
+	Person
+
+	/// A group's ID.
+	Group
+
+	/// An organisation's ID.
+	Org
+}

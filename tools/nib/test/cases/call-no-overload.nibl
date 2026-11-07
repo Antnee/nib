@@ -1,0 +1,4 @@
+// expect: error: no overload of `assert` takes (…, …, …)
+pub fn main() {
+	assert(true, "a", "b")
+}

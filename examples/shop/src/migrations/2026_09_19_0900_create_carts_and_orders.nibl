@@ -1,0 +1,49 @@
+import std.db.{Db}
+import std.migrations.{Migration, MigrationError}
+
+record CreateCartsAndOrders implements Migration {
+	override fn apply(db: Db) else MigrationError {
+		try db.execute(sql"""
+			create table carts (
+				id bigint generated always as identity primary key,
+				owner bigint not null references users (id),
+				currency text not null,
+				address jsonb not null
+			)
+			""")
+
+		try db.execute(sql"""
+			create table cart_lines (
+				cart_id bigint not null references carts (id) on delete cascade,
+				position int not null,
+				sku text not null,
+				name text not null,
+				quantity int not null check (quantity > 0),
+				unit_price numeric(12, 2) not null,
+				unit_weight_grams int not null,
+				primary key (cart_id, position)
+			)
+			""")
+
+		try db.execute(sql"""
+			create table stock (
+				sku text not null,
+				warehouse text not null,
+				on_hand int not null,
+				primary key (sku, warehouse)
+			)
+			""")
+
+		try db.execute(sql"""
+			create table orders (
+				id bigint generated always as identity primary key,
+				customer bigint not null references users (id),
+				status text not null,
+				total_amount numeric(12, 2) not null,
+				total_currency text not null,
+				payment_id text,
+				placed_at timestamptz not null
+			)
+			""")
+	}
+}

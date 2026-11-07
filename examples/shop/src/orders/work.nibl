@@ -1,0 +1,14 @@
+import shop.core.{RepositoryError}
+
+/// What one atomic piece of order work can touch: marking an order paid and emptying its
+/// cart happen together or not at all. Implemented by `storage.SqlOrdersWork` and, in tests,
+/// by `InMemoryOrdersWork`.
+interface OrdersWork {
+	get orders: OrderRepository
+	get carts: CartRepository
+
+	fn commit() else RepositoryError
+
+	/// A no-op after `commit`, so it can always be deferred.
+	fn rollback()
+}

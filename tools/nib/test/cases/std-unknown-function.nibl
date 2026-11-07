@@ -1,0 +1,6 @@
+// expect: error: module `std.log` has no `wrn`; did you mean `warn`?
+import std.log
+
+fn f() {
+	log.wrn("disk nearly full")
+}

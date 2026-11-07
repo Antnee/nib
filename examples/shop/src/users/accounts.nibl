@@ -1,0 +1,194 @@
+import std.cache.{CacheError, Limit, RateLimit, RateLimiter}
+import std.crypto.{SecureRandom, Token, TokenHash}
+import std.crypto.passwords with {PasswordCheck}
+import std.queue.{QueueError}
+import std.time.{Clock, Duration}
+import shop.core.{RepositoryError, UnitOfWork}
+
+// At most one new confirmation link every ten minutes, however often someone tries to sign in.
+const CONFIRMATION_RESENDS = Limit<UserId>(name: "confirm-email", max: 1, per: Duration.of(minutes: 10))
+
+/// Sign-up, sign-in, email confirmation and password resets.
+///
+/// Reads and single writes use the repositories directly. Anything that has to happen
+/// together uses a unit of work, and so does every email, because emails go out through
+/// the work's outbox.
+class Accounts {
+	construct(
+		named private work: UnitOfWork<AccountsWork>,
+		named private users: UserRepository,
+		named private tokens: TokenRepository,
+		named private limiter: RateLimiter,
+		named private clock: Clock,
+		named private random: SecureRandom,
+		named private policy: passwords.Policy,
+	) {}
+
+	/// Creates an unconfirmed account and queues a confirmation email.
+	///
+	/// If the address is already registered, nothing is created and its owner gets an
+	/// "account exists" email instead, so the sign-up form never reveals who has an account.
+	fn signUp(email: Email, password: Password) else AccountError {
+		// Hash before starting the work: Argon2id is deliberately slow.
+		let hash = passwords.hash(password, this.policy)
+
+		let work = try this.work.begin()
+		defer work.rollback()
+
+		// One email either way, so the request takes as long for a registered address as for a
+		// new one.
+		let created = try work.users.createIfAbsent(email, hash, at: this.clock.now())
+		let job = match created {
+			Creation.Created(userId:) => EmailJob.ConfirmEmail(userId:)
+			Creation.AlreadyRegistered(userId:) => EmailJob.AccountExists(userId:)
+		}
+		try work.outbox.publish(job)
+		try work.commit()
+	}
+
+	/// Checks an email and password. Upgrades the stored hash when the policy has changed,
+	/// including legacy bcrypt hashes imported from a PHP app.
+	fn signIn(email: Email, attempt: PasswordAttempt) -> SignInOutcome else AccountError {
+		let user = try this.users.findByEmail(email) ?? {
+			// Take as long as a real check, so timing doesn't reveal which emails exist.
+			passwords.simulateVerify(this.policy)
+			return SignInOutcome.InvalidCredentials
+		}
+
+		// A `match`, so a new kind of answer from `verify` can't sign anyone in by default.
+		let needsRehash = match user.passwordHash.verify(attempt, this.policy) {
+			PasswordCheck.Invalid => return SignInOutcome.InvalidCredentials
+			PasswordCheck.Valid => false
+			PasswordCheck.ValidNeedsRehash => true
+		}
+
+		if not user.isConfirmed {
+			let resend = try this.limiter.hit(CONFIRMATION_RESENDS, user.id)
+			if resend is RateLimit.Limited {
+				return SignInOutcome.Unconfirmed
+			}
+			let work = try this.work.begin()
+			defer work.rollback()
+			try work.outbox.publish(EmailJob.ConfirmEmail(userId: user.id))
+			try work.commit()
+			return SignInOutcome.Unconfirmed
+		}
+
+		if needsRehash {
+			let upgraded = user with (passwordHash: passwords.hash(attempt, this.policy))
+			// If the stored hash has changed since it was read, the password was reset in the
+			// meantime, and the one typed is no longer the account's.
+			let replaced = try this.users.upgradePasswordHash(
+				user.id,
+				current: user.passwordHash,
+				upgraded: upgraded.passwordHash,
+			)
+			if not replaced {
+				return SignInOutcome.InvalidCredentials
+			}
+			return SignInOutcome.SignedIn(user: upgraded)
+		}
+
+		return SignInOutcome.SignedIn(user:)
+	}
+
+	/// Queues a reset for the address, whether or not it has an account. The email job looks
+	/// the account up, so this does the same work either way, and the queue holds the
+	/// address's key rather than the address.
+	fn requestPasswordReset(email: Email) else AccountError {
+		let key = try this.users.emailKey(email)
+		// One email on its own still goes through a unit of work, so every email takes the
+		// same path out (the outbox), wherever the queue ends up living.
+		let work = try this.work.begin()
+		defer work.rollback()
+		try work.outbox.publish(EmailJob.ResetRequested(emailKey: key))
+		try work.commit()
+	}
+
+	/// The address's key, for counting attempts at it without keeping the address.
+	fn emailKey(email: Email) -> EmailKey else AccountError {
+		return try this.users.emailKey(email)
+	}
+
+	/// Creates a single-use token for a link. Only its hash is stored. Called by the email
+	/// consumer, so tokens never sit in the queue.
+	fn issueToken(userId: UserId, purpose: TokenPurpose) -> Token else RepositoryError {
+		let token = this.random.token(bytes: 32)
+		try this.tokens.save(IssuedToken(
+			userId:,
+			purpose:,
+			hash: token.hash,
+			expiresAt: this.clock.now().plus(purpose.lifetime),
+		))
+		return token
+	}
+
+	/// `tokenHash` is the hash of the token from the emailed link.
+	fn confirmEmail(tokenHash: TokenHash) -> LinkOutcome else AccountError {
+		let now = this.clock.now()
+		let work = try this.work.begin()
+		defer work.rollback()
+
+		let issued = try work.tokens.findUsable(tokenHash, TokenPurpose.Confirm, now:)
+			?? return LinkOutcome.InvalidOrExpired
+		let user = try work.users.find(issued.userId) ?? return LinkOutcome.InvalidOrExpired
+
+		try work.users.saveCredentials(user.id, passwordHash: user.passwordHash, confirmedAt: user.confirmedAt ?? now)
+		try work.tokens.markUsed(issued.hash, at: now)
+		try work.commit()
+		return LinkOutcome.Done
+	}
+
+	/// `tokenHash` is the hash of the token from the emailed link. Someone resetting a
+	/// password may think another person has it, so this also signs the account out
+	/// everywhere and cancels every other reset link. Using the link proves they have the
+	/// inbox, so it confirms the address too.
+	fn resetPassword(tokenHash: TokenHash, password: Password) -> LinkOutcome else AccountError {
+		let now = this.clock.now()
+		// Check the token before the slow hash, so a made-up token costs almost nothing. The
+		// work checks it again, in case it's used in between.
+		let _ = try this.tokens.findUsable(tokenHash, TokenPurpose.ResetPassword, now:)
+			?? return LinkOutcome.InvalidOrExpired
+		let passwordHash = passwords.hash(password, this.policy)
+		let work = try this.work.begin()
+		defer work.rollback()
+
+		let issued = try work.tokens.findUsable(tokenHash, TokenPurpose.ResetPassword, now:)
+			?? return LinkOutcome.InvalidOrExpired
+		let user = try work.users.find(issued.userId) ?? return LinkOutcome.InvalidOrExpired
+
+		try work.users.saveCredentials(user.id, passwordHash:, confirmedAt: user.confirmedAt ?? now)
+		try work.users.endSessions(user.id)
+		// Every unused reset link, including this one.
+		try work.tokens.revokeAll(user.id, TokenPurpose.ResetPassword, at: now)
+		try work.commit()
+		return LinkOutcome.Done
+	}
+}
+
+enum AccountError implements Error {
+	Storage(from RepositoryError)
+	Queue(from QueueError)
+	Cache(from CacheError)
+
+	override get message: String => match this {
+		AccountError.Storage => "couldn't read or save the account"
+		AccountError.Queue => "couldn't queue the account's email"
+		AccountError.Cache => "couldn't check the rate limit"
+	}
+}
+
+/// How a sign-in went. A wrong password and an unconfirmed address aren't failures: the
+/// sign-in page answers each one, and nothing passes them on.
+enum SignInOutcome {
+	SignedIn(user: User)
+	InvalidCredentials
+	Unconfirmed
+}
+
+/// How using an emailed link went. One that's mangled, expired or already used gets a page
+/// of its own, so it's an answer rather than a failure.
+enum LinkOutcome {
+	Done
+	InvalidOrExpired
+}

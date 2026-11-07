@@ -1,0 +1,22 @@
+// expect: ok
+// `remember` fails only as its `compute` does: a cache that can't be reached isn't a failure.
+import std.cache.{Cache}
+import std.time.{Duration}
+
+enum RatesError implements Error {
+	Down
+
+	override get message: String => "the rates service is down"
+}
+
+fn fetchRates() -> Int else RatesError {
+	fail RatesError.Down
+}
+
+fn rates(cache: Cache) -> Int else RatesError {
+	return try cache.remember("rates", ttl: Duration.of(minutes: 10), compute: fn() => try fetchRates())
+}
+
+fn answer(cache: Cache) -> Int {
+	return cache.remember("answer", ttl: Duration.of(hours: 1), compute: fn() => 42)
+}

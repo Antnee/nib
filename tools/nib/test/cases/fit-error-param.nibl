@@ -1,0 +1,4 @@
+// expect: error: `attempt` fails with `E`, so `E` has to be an `Error`: declare it as `E: Error`
+fn attempt<T, E>(f: fn() -> T else E) -> T else E {
+	return try f()
+}

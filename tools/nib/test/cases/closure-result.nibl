@@ -1,0 +1,22 @@
+// expect: error: this is a `Sku`, but the function passed here should return an `Int`
+type Sku: String
+
+record Line {
+	sku: Sku
+	quantity: Int
+	isShort: Bool
+}
+
+enum QuoteError implements Error {
+	Unavailable
+
+	override get message: String => "no quote"
+}
+
+fn quote(line: Line) -> Int else QuoteError {
+	return line.quantity
+}
+
+fn run(lines: List<Line>) {
+	let counts: List<Int> = lines.map(fn(line) => line.sku)
+}

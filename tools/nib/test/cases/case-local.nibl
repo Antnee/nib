@@ -1,0 +1,5 @@
+// expect: error: must be camelCase
+fn f() {
+	let Total = 1
+	print("${Total}")
+}

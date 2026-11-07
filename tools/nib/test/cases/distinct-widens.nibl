@@ -1,0 +1,12 @@
+// expect: ok
+// A distinct type is a subtype of its base, so it's passed where the base is wanted.
+type OrderId: Int
+
+fn describe(n: Int) -> String {
+	return "number ${n}"
+}
+
+fn show(id: OrderId) -> String {
+	let n: Int = id
+	return "${describe(id)} ${describe(n)}"
+}

@@ -1,0 +1,8 @@
+// expect: error: `label` is set on only some paths before this, so it may not be set yet
+fn describe(flag: Bool) -> String {
+	let label: String
+	if flag {
+		label = "yes"
+	}
+	return label
+}

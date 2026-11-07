@@ -1,0 +1,110 @@
+import std.app.{Env}
+import std.cache.{RateLimiter}
+import std.crypto.{SecureRandom}
+import std.db.{Db}
+import std.queue.{DurableQueue}
+import std.time.{Clock, Duration}
+import access.{Access}
+import shop.integrations.{Analytics, FlatTaxRates, HttpAnalytics, HttpShippingRates, StripeGateway}
+import shop.mail.{EmailDelivery, Mailer, SmtpMailer}
+import shop.orders.{CartOwnerVoter, CartRepository, CheckoutService, OrderRepository}
+import shop.storage.{
+	SqlAccountsUnitOfWork,
+	SqlCartRepository,
+	SqlInventory,
+	SqlOrderRepository,
+	SqlOrdersUnitOfWork,
+	SqlTokenRepository,
+	SqlUserRepository,
+}
+import shop.users.{Accounts, EmailJob, EMAILS, User, UserRepository}
+import shop.web.{AuthHandlers, CheckoutHandlers, ExportHandlers, Identity, Pages, SiteHandlers}
+
+/// The typed container. Each `lazy` field says how to build one thing; it is built on first
+/// read and then shared for the rest of the request (or queue message). Missing dependencies
+/// and cycles are compile errors.
+///
+/// It is the composition root: the only place that knows how everything is built. Handlers
+/// never receive it; the route table and the queue consumer pick a handler from it, and that
+/// handler gets only what its `construct` asks for.
+///
+/// A new `Services` is created for every request and queue message, so nothing here lives
+/// longer than one of them. Long-lived resources (the DB pool, the HTTP client) belong to
+/// the host and are reached through `env`.
+class Services {
+	construct(private env: Env, private config: Config) {}
+
+	private lazy clock: Clock = this.env.clock
+	private lazy random: SecureRandom = this.env.secureRandom
+	private lazy db: Db = this.env.db("main").withKeyring("pii", this.config.pii)
+	private lazy emails: DurableQueue<EmailJob> = this.env.queue(EMAILS)
+	private lazy limiter: RateLimiter = this.env.rateLimiter("main")
+
+	private lazy users: UserRepository = new SqlUserRepository(this.db)
+	private lazy carts: CartRepository = new SqlCartRepository(this.db)
+
+	// Domain services. Each gets a unit of work for anything that must happen together.
+
+	private lazy accounts: Accounts = new Accounts(
+		work: new SqlAccountsUnitOfWork(this.db, this.emails),
+		users: this.users,
+		tokens: new SqlTokenRepository(this.db),
+		limiter: this.limiter,
+		clock: this.clock,
+		random: this.random,
+		policy: this.config.passwordPolicy,
+	)
+
+	private lazy checkoutService: CheckoutService = new CheckoutService(
+		work: new SqlOrdersUnitOfWork(this.db),
+		carts: this.carts,
+		orders: this.orders,
+		shipping: new HttpShippingRates(
+			this.env.http.client(base: this.config.shippingApi, timeout: Duration.of(seconds: 5)),
+		),
+		taxes: new FlatTaxRates(rate: 0.20),
+		inventory: new SqlInventory(this.db),
+		gateway: new StripeGateway(this.env.http, this.config.stripeKey),
+		clock: this.clock,
+		access: this.access,
+	)
+
+	private lazy orders: OrderRepository = new SqlOrderRepository(this.db)
+
+	// Who may do what. Each voter answers for one kind of thing.
+	private lazy access: Access<User> = new Access()
+		.register(new CartOwnerVoter())
+
+	private lazy mailer: Mailer = new SmtpMailer(this.config.smtp)
+	private lazy analytics: Analytics = new HttpAnalytics(
+		this.env.http.client(base: this.config.analyticsApi, timeout: Duration.of(seconds: 2)),
+	)
+
+	// Entry points: what the route table and the queue consumer pick from. Everything above
+	// is private, so these are the only fields readable from outside.
+
+	lazy identity: Identity = new Identity(this.users)
+	lazy pages: Pages = new Pages(this.identity, this.config.locale)
+	lazy site: SiteHandlers = new SiteHandlers()
+	lazy auth: AuthHandlers = new AuthHandlers(
+		accounts: this.accounts,
+		limiter: this.limiter,
+		analytics: this.analytics,
+	)
+	lazy checkout: CheckoutHandlers = new CheckoutHandlers(
+		checkout: this.checkoutService,
+		carts: this.carts,
+		access: this.access,
+		analytics: this.analytics,
+		stripePublishableKey: this.config.stripePublishableKey,
+	)
+	lazy exports: ExportHandlers = new ExportHandlers(this.orders)
+	lazy delivery: EmailDelivery = new EmailDelivery(
+		users: this.users,
+		accounts: this.accounts,
+		mailer: this.mailer,
+		limiter: this.limiter,
+		baseUrl: this.config.baseUrl,
+		locale: this.config.locale,
+	)
+}

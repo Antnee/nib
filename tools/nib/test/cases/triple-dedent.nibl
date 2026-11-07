@@ -1,0 +1,7 @@
+// expect: error: less indented than its closing
+fn f() -> String {
+	return """
+	one
+		two
+		"""
+}

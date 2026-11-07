@@ -1,0 +1,16 @@
+[package]
+name = "antnee/webhooks"
+version = "0.1.0"
+nib = "^1.0.0"
+
+[config]
+DATABASE_URL = { secret = true }
+WEBHOOK_SIGNING_KEY = { secret = true }
+
+[databases.main]
+engine = "postgres"
+migrations = "webhooks.migrations"
+from = "DATABASE_URL"
+
+[queues.webhooks]
+database = "main"

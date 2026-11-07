@@ -1,0 +1,10 @@
+import std.db.{Db}
+import std.migrations.{Migration, MigrationError}
+import std.queue
+
+/// The database-backed queue's tables, which the worker reads its jobs from.
+record InstallQueue implements Migration {
+	override fn apply(db: Db) else MigrationError {
+		try queue.installSchema(db)
+	}
+}

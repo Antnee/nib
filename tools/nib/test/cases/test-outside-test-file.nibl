@@ -1,0 +1,3 @@
+// expect: error: belong in `.test.nibl` files
+test "nothing" {
+}

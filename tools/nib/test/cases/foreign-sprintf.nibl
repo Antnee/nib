@@ -1,0 +1,4 @@
+// expect: error: unknown name `sprintf`: Nib has no format strings
+fn label(id: Int) -> String {
+	return sprintf("%06d", id)
+}

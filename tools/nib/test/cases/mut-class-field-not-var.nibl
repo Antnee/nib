@@ -1,0 +1,8 @@
+// expect: error: `count` isn't a `var` field, so it can't change
+class Counter {
+	private count: Int = 0
+
+	fn increment() {
+		this.count++
+	}
+}

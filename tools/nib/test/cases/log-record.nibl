@@ -1,0 +1,13 @@
+// expect: only error: a record or class of your own may hold personal data
+// A user's record holds their email address, so it isn't written into a log by accident.
+import std.log
+
+record User {
+	id: Int
+	email: String
+}
+
+fn signedIn(user: User) {
+	log.info("signed in", fields: ["userId": user.id])
+	log.info("signed in", fields: ["user": user])
+}

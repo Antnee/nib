@@ -1,0 +1,6 @@
+# expect: error: `API_KEY` is a secret in nib.toml, so read it with `env.secret`
+[package]
+name = "demo"
+
+[config]
+API_KEY = { secret = true }

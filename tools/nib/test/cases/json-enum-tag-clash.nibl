@@ -1,0 +1,7 @@
+// expect: only error: `Circle`'s `type` is written under `"type"`, the variant's tag: rename it, or set `@json(tag: …)`
+import std.json.{@json}
+
+@json
+enum Shape {
+	Circle(radius: Int, type: String)
+}

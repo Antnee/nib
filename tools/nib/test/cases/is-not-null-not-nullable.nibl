@@ -1,0 +1,7 @@
+// expect: only error: this can't be `null`, so there's nothing to test
+fn greet(nickname: String) -> String {
+	if nickname is not null {
+		return "Hello, ${nickname}"
+	}
+	return "Hello"
+}

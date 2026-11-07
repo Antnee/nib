@@ -1,0 +1,56 @@
+import std.codec.{Case}
+import std.db.{@db}
+import std.money.{Money}
+import std.time.{Instant}
+import shop.core.{RepositoryError}
+import shop.users.{UserId}
+
+type OrderId: Int
+
+type PaymentId: String
+
+/// Stored as its backing value in a plain text column.
+enum OrderStatus: String {
+	Pending = "pending"
+	Paid = "paid"
+	PaymentFailed = "payment_failed"
+}
+
+@db(table: "orders", columns: Case.Snake)
+record Order {
+	id: OrderId
+
+	/// Customer-facing, such as `SHOP-000123`. Set by the database on insert.
+	number: String
+
+	customer: UserId
+	status: OrderStatus
+
+	/// Stored as two columns, `total_amount` and `total_currency`.
+	@db(embed: true, prefix: "total_")
+	total: Money
+
+	paymentId: PaymentId? = null
+	placedAt: Instant
+}
+
+/// An order that hasn't been saved yet, so it has no ID.
+record NewOrder {
+	customer: UserId
+	total: Money
+	placedAt: Instant
+}
+
+record Receipt {
+	orderId: OrderId
+	total: Money
+	paymentId: PaymentId
+}
+
+interface OrderRepository {
+	fn create(order: NewOrder) -> Order else RepositoryError
+	fn save(order: Order) else RepositoryError
+
+	/// A customer's orders, newest first, read as the caller's loop reaches them.
+	fn forCustomer(customer: UserId) -> Iterable<Order, RepositoryError>
+}

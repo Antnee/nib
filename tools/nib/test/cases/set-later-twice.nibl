@@ -1,0 +1,9 @@
+// expect: error: `label` is a `let`, and it's already set here
+fn describe(flag: Bool) -> String {
+	let label: String
+	label = "yes"
+	if flag {
+		label = "no"
+	}
+	return label
+}

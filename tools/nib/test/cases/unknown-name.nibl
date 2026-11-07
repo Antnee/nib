@@ -1,0 +1,4 @@
+// expect: error: unknown name `totl`
+fn f(total: Int) -> Int {
+	return totl + 1
+}

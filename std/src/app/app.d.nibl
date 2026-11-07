@@ -1,0 +1,146 @@
+import std.cache.{Cache, RateLimiter}
+import std.codec.{Codable, JsonCodec}
+import std.crypto.{SecureRandom}
+import std.db.{Db}
+import std.files.{Dir, FileError, Files}
+import std.http.{Handler, HttpClient, IpAddress, Url}
+import std.io.{IoError, Writer}
+import std.log
+import std.queue.{Consumer, DurableQueue, QueueAddress}
+import std.time.{Clock}
+import std.uuid.{Uuids}
+
+// What a program gets from its host, and what a server gives back.
+//
+// A CLI program is `pub fn main(env: Env)`. It can return its exit code, `-> Int`, and fail,
+// `-> Int else E` where `E` implements `Error`: a failure prints the error and exits with 1.
+// A server is `pub fn main(env: Env) -> App`, or `-> App else E`: it runs once per process,
+// and if it fails the host logs the message and doesn't start.
+
+/// What the host grants the program: configuration, and long-lived resources such as the
+/// database pool and the HTTP client. Everything here lives as long as the process and is
+/// shared by every request.
+///
+/// A package's manifest, `nib.toml`, declares every variable and resource asked for here
+/// by name, and the compiler checks each name against it. A program without a manifest is
+/// given directories on the command line, with `--dir name=path`.
+///
+/// The host checks that every declared variable is set before `main` runs, and reports all
+/// the missing ones at once. Parsing a value can still fail, so read configuration in
+/// `main`, where a bad value stops the app at startup:
+///
+/// ```
+/// let baseUrl = try env.url("BASE_URL")
+/// let stripeKey = try env.secret("STRIPE_KEY")
+/// ```
+pub class Env {
+	/// The command-line arguments. The first is the program's own name.
+	get args: List<String>
+
+	/// The system clock.
+	get clock: Clock
+
+	/// The operating system's secure random generator.
+	get secureRandom: SecureRandom
+
+	/// Makes UUIDs, from the system clock and the secure random generator.
+	get uuids: Uuids
+
+	/// The process's HTTP client, with a connection pool shared by every request. Make a
+	/// configured copy for each service you call with `client(base:, …)`.
+	get http: HttpClient
+
+	/// The configuration variable `name`, as text. It's declared in the manifest's `[config]`,
+	/// and each variable is read as one kind everywhere.
+	fn string(name: String) -> String else ConfigError
+
+	/// The configuration variable `name`, as an integer.
+	fn int(name: String) -> Int else ConfigError
+
+	/// The configuration variable `name`, as an absolute URL.
+	fn url(name: String) -> Url else ConfigError
+
+	/// The configuration variable `name`, as a secret that stays out of logs. A variable
+	/// declared `secret = true` can only be read this way, and this reads only those.
+	fn secret(name: String) -> Secret else ConfigError
+
+	/// A handle to the database pool declared as `name` in the manifest's `[databases]`. The
+	/// host connects before `main` runs, so this can't fail later.
+	fn db(name: String) -> Db
+
+	/// The durable queue at `address`, which the manifest declares in `[queues]`.
+	fn queue<T: Codable<JsonCodec>>(address: QueueAddress<T>) -> DurableQueue<T>
+
+	/// The cache declared as `name` in the manifest's `[caches]`.
+	fn cache(name: String) -> Cache
+
+	/// The rate limiter declared as `name` in the manifest's `[rate-limiters]`.
+	fn rateLimiter(name: String) -> RateLimiter
+
+	/// The directory declared as `name` in the manifest's `[directories]`, or granted with
+	/// `--dir name=path` to a program without a manifest. Nothing opened beneath it can escape
+	/// it, and one declared with `access = "read"` refuses writes with
+	/// `FileError.PermissionDenied`.
+	fn dir(name: String) -> Dir else FileError
+
+	/// The files declared as `name` in the manifest's `[files]`, which ship with the build.
+	/// The host checks that they're all there before `main` runs, so this can't fail.
+	fn files(name: String) -> Files
+
+	/// The directory a command-line program was started in, which its host grants, so that
+	/// paths typed on the command line work. A server's host doesn't grant it, and this
+	/// fails with `FileError.PermissionDenied`.
+	///
+	/// ```
+	/// let input = try env.workingDir().open(try env.workingDir().resolveWithin(argument))
+	/// ```
+	fn workingDir() -> Dir else FileError
+
+	/// Standard input, a chunk at a time. Empty for a server.
+	get stdin: Iterable<Bytes, IoError>
+
+	/// Standard output. A write goes out at once, with no commit step: `close` only flushes
+	/// what's buffered. `print` writes here too.
+	get stdout: Writer
+
+	/// Standard error, for messages to the person running the program, kept apart from the
+	/// output so a pipe carries only the output. Like `stdout`, it has no commit step.
+	get stderr: Writer
+}
+
+/// Why a configuration variable couldn't be read.
+pub enum ConfigError implements Error {
+	/// The variable isn't set. The host reports this for a declared variable before `main`
+	/// runs, so a program sees it only without a manifest.
+	Missing(name: String)
+
+	/// The variable is set, but its value isn't of the kind asked for.
+	Invalid(name: String, reason: String)
+
+	override get message: String
+}
+
+/// A server's configuration, returned by `main` as data. The host builds what it describes
+/// and then calls the handlers once per request or message.
+///
+/// ```
+/// pub fn main(env: Env) -> App {
+/// 	return App(http: hello)
+/// }
+/// ```
+pub record App {
+	/// Answers every HTTP request. A route table's `serve(…)` makes one, and so does any
+	/// single function from a `Request` to a `Response`. An app that only runs queue
+	/// consumers leaves it out.
+	http: Handler? = null
+
+	/// The queue consumers to run.
+	consumers: List<Consumer> = []
+
+	/// Where log events go.
+	logRoutes: List<log.Route> = []
+
+	/// The proxies whose `X-Forwarded-For` header is believed when working out a request's
+	/// client address. With none, the address is the connection's.
+	trustedProxies: List<IpAddress> = []
+}

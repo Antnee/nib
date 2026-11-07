@@ -1,0 +1,7 @@
+fn total() -> Int {
+	return sum(values: [
+		1,
+		// A comment.
+		2,
+	])
+}

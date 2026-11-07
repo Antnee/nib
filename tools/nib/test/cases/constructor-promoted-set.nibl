@@ -1,0 +1,6 @@
+// expect: only error: `greeting` is set from the constructor's parameter, and it isn't a `var`
+class Greeter {
+	construct(private greeting: String) {
+		this.greeting = "${greeting}!"
+	}
+}

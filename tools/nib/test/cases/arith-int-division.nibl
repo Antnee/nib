@@ -1,0 +1,4 @@
+// expect: error: an `Int` has no `/`: divide whole numbers with `div`, and get the remainder with `mod`
+fn half(n: Int) -> Int {
+	return n / 2
+}

@@ -1,0 +1,8 @@
+// expect: error: this is a `String`, but `to` needs an `Email`: wrap it, as `Email(…)`
+type Email: String
+
+fn send(to: Email) {}
+
+fn run(address: String) {
+	send(address)
+}

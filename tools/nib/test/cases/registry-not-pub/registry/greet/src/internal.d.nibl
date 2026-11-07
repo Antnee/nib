@@ -1,0 +1,4 @@
+/// Used inside the package only.
+class Counter {
+	construct()
+}

@@ -1,0 +1,54 @@
+import std.html.{Html}
+import smtp
+import shop.users.{Email}
+
+record SmtpSettings {
+	host: String
+	port: Int
+	username: String
+	password: Secret
+}
+
+record MailMessage {
+	to: Email
+	subject: String
+	html: Secret<Html>
+	text: Secret
+}
+
+interface Mailer {
+	fn send(message: MailMessage) else MailError
+}
+
+/// Wraps the `acme/smtp` package. Only this file imports it, so the rest of the app sees
+/// only `Mailer`.
+class SmtpMailer implements Mailer {
+	private client: smtp.Client
+
+	construct(settings: SmtpSettings) {
+		this.client = new smtp.Client(
+			host: settings.host,
+			port: settings.port,
+			username: settings.username,
+			password: settings.password,
+		)
+	}
+
+	override fn send(message: MailMessage) else MailError {
+		try this.client.send(smtp.Message(
+			from: "Shop <hello@shop.example>",
+			to: message.to,
+			subject: message.subject,
+			html: message.html.revealed,
+			text: message.text.revealed,
+		))
+	}
+}
+
+enum MailError implements Error {
+	Smtp(from smtp.SendError)
+
+	override get message: String => match this {
+		MailError.Smtp => "the mail server didn't accept the message"
+	}
+}

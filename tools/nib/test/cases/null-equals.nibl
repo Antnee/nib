@@ -1,0 +1,4 @@
+// expect: error: test for `null` with `is`: write `name is null`
+fn missing(name: String?) -> Bool {
+	return name == null
+}

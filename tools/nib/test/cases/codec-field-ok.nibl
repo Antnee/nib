@@ -1,0 +1,39 @@
+// expect: ok
+import std.crypto.{TokenHash}
+import std.crypto.passwords.{PasswordHash}
+import std.db.{@db}
+import std.json.{@json}
+import std.time.{Instant}
+
+type Email: private String implements Parseable {
+	override static fn parse(text: String) -> Email else ParseError {
+		return Email(text)
+	}
+}
+
+type UserId: Int
+
+@json
+record Money {
+	amount: Decimal
+	currency: String
+}
+
+@db(table: "users")
+record User {
+	id: UserId
+	email: Email
+	passwordHash: PasswordHash
+	confirmedAt: Instant?
+
+	@db(embed: true, prefix: "credit_")
+	credit: Money
+
+	@db(json: true)
+	settings: Money
+}
+
+@db(table: "tokens")
+record IssuedToken {
+	hash: TokenHash
+}

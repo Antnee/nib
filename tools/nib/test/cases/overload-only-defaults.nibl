@@ -1,0 +1,8 @@
+// expect: error: differs from the one on line 2 only in parameters with defaults
+fn send(to: String) -> Int {
+	return 1
+}
+
+fn send(to: String, named retries: Int = 3) -> Int {
+	return retries
+}

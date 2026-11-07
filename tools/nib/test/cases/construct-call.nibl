@@ -1,0 +1,8 @@
+// expect: only error: a constructor is called with `new`: `new Greeter(…)`
+class Greeter {
+	construct(private greeting: String) {}
+}
+
+fn hello() -> Greeter {
+	return Greeter.construct("Hello")
+}

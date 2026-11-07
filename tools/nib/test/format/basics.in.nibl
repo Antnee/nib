@@ -1,0 +1,26 @@
+import shop.users.{User}
+import access.{Access}
+import std.json.{JsonCodec, @json}
+import std.json
+import std.codec.{Case}
+import std.codec.{Codable}
+fn a(x: Int,    y: Int) -> Int {
+
+
+	let veryLongNameThatGoesOnAndOnAndOnForeverAndEverAndEverAndEverAndEverAndEverAndEverAndEverAndEverAndEver = 1
+	let m: Map<String, List<Map<String, Int>>> = [:]
+	let pair = (x, y)
+	let r = call(
+		x, // the first
+		y,
+	)
+	let total = x +
+		y
+	let v = this.db
+		.scalar<Int>(sql"select 1")
+		else err { fail err }
+
+	return total
+
+}
+fn b() {}

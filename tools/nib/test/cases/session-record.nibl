@@ -1,0 +1,8 @@
+// expect: error: `SessionKey` needs its `T` to be `Codable<SessionCodec>`, and `Basket` isn't: `Basket` doesn't implement `Codable`
+import std.http.{SessionKey}
+
+record Basket {
+	items: List<String>
+}
+
+const BASKET = SessionKey<Basket>("basket")

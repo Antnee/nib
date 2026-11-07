@@ -1,0 +1,47 @@
+[package]
+name = "antnee/shop"
+version = "0.1.0"
+nib = "^1.0.0"
+
+[dependencies]
+stripe = { package = "stripe/stripe", version = "^4.0.0" }
+smtp = { package = "acme/smtp", version = "^1.2.0" }
+access = { package = "nib/access", version = "^1.0.0" }
+
+# Everything the shop needs from its host. Each environment sets these variables; in
+# development they can come from a `.env` file.
+[config]
+BASE_URL = {}
+DATABASE_URL = { secret = true }
+CACHE_URL = { secret = true }
+LOG_DIR = {}
+PII_KEYS = { secret = true }
+SMTP_HOST = {}
+SMTP_PORT = {}
+SMTP_USERNAME = {}
+SMTP_PASSWORD = { secret = true }
+STRIPE_KEY = { secret = true }
+STRIPE_PUBLISHABLE_KEY = {}
+SHIPPING_API_URL = {}
+ANALYTICS_API_URL = {}
+LOCALE = {}
+
+[databases.main]
+engine = "postgres"
+migrations = "shop.migrations"
+from = "DATABASE_URL"
+
+# In the main database, so an order and its emails commit together.
+[queues.emails]
+database = "main"
+
+[rate-limiters.main]
+from = "CACHE_URL"
+
+# Shipped with the build, so they always match the pages that link to them.
+[files.assets]
+path = "assets"
+
+[directories.logs]
+access = "write"
+from = "LOG_DIR"

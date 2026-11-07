@@ -1,0 +1,6 @@
+// expect: error: an error's `message` is its getter
+enum ImportError implements Error {
+	Rejected(message: String)
+
+	override get message: String => "the import was rejected"
+}

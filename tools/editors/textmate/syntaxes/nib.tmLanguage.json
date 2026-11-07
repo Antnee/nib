@@ -1,0 +1,276 @@
+{
+	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+	"name": "nib",
+	"scopeName": "source.nib",
+	"fileTypes": ["nibl"],
+	"patterns": [{ "include": "#code" }],
+	"repository": {
+		"code": {
+			"patterns": [
+				{ "include": "#comments" },
+				{ "include": "#strings" },
+				{ "include": "#attributes" },
+				{ "include": "#numbers" },
+				{ "include": "#members" },
+				{ "include": "#declarations" },
+				{ "include": "#labels" },
+				{ "include": "#keywords" },
+				{ "include": "#names" },
+				{ "include": "#operators" },
+				{ "include": "#braces" }
+			]
+		},
+		"comments": {
+			"patterns": [
+				{
+					"name": "comment.line.documentation.nib",
+					"match": "///.*$"
+				},
+				{
+					"name": "comment.line.double-slash.nib",
+					"match": "//.*$"
+				}
+			]
+		},
+		"attributes": {
+			"match": "(@)([a-z][A-Za-z0-9]*)",
+			"captures": {
+				"1": { "name": "punctuation.definition.annotation.nib" },
+				"2": { "name": "storage.type.annotation.nib" }
+			},
+			"name": "meta.annotation.nib"
+		},
+		"numbers": {
+			"patterns": [
+				{ "name": "constant.numeric.hex.nib", "match": "\\b0x[0-9A-Fa-f][0-9A-Fa-f_]*\\b" },
+				{ "name": "constant.numeric.binary.nib", "match": "\\b0b[01][01_]*\\b" },
+				{ "name": "constant.numeric.decimal.nib", "match": "\\b[0-9][0-9_]*\\.[0-9][0-9_]*\\b" },
+				{ "name": "constant.numeric.integer.nib", "match": "\\b[0-9][0-9_]*\\b" }
+			]
+		},
+		"strings": {
+			"patterns": [
+				{
+					"name": "string.quoted.triple.raw.nib",
+					"begin": "\\br\"\"\"",
+					"end": "\"\"\"",
+					"beginCaptures": { "0": { "name": "punctuation.definition.string.begin.nib" } },
+					"endCaptures": { "0": { "name": "punctuation.definition.string.end.nib" } }
+				},
+				{
+					"name": "string.quoted.double.raw.nib",
+					"begin": "\\br\"",
+					"end": "\"",
+					"beginCaptures": { "0": { "name": "punctuation.definition.string.begin.nib" } },
+					"endCaptures": { "0": { "name": "punctuation.definition.string.end.nib" } }
+				},
+				{
+					"name": "string.quoted.triple.nib",
+					"begin": "\\b(?:(secret) +(?=(?:url|html)\"))?(html|sql|url|path|secret)?(\"\"\")",
+					"end": "\"\"\"",
+					"beginCaptures": {
+						"1": { "name": "storage.modifier.string-tag.nib" },
+						"2": { "name": "storage.modifier.string-tag.nib" },
+						"3": { "name": "punctuation.definition.string.begin.nib" }
+					},
+					"endCaptures": { "0": { "name": "punctuation.definition.string.end.nib" } },
+					"patterns": [{ "include": "#escapes" }, { "include": "#interpolation" }]
+				},
+				{
+					"name": "string.quoted.triple.nib",
+					"begin": "\"\"\"",
+					"end": "\"\"\"",
+					"beginCaptures": { "0": { "name": "punctuation.definition.string.begin.nib" } },
+					"endCaptures": { "0": { "name": "punctuation.definition.string.end.nib" } },
+					"patterns": [{ "include": "#escapes" }, { "include": "#interpolation" }]
+				},
+				{
+					"name": "string.quoted.double.nib",
+					"begin": "\\b(?:(secret) +(?=(?:url|html)\"))?(html|sql|url|path|secret)?(\")",
+					"end": "\"|$",
+					"beginCaptures": {
+						"1": { "name": "storage.modifier.string-tag.nib" },
+						"2": { "name": "storage.modifier.string-tag.nib" },
+						"3": { "name": "punctuation.definition.string.begin.nib" }
+					},
+					"endCaptures": { "0": { "name": "punctuation.definition.string.end.nib" } },
+					"patterns": [{ "include": "#escapes" }, { "include": "#interpolation" }]
+				},
+				{
+					"name": "string.quoted.double.nib",
+					"begin": "\"",
+					"end": "\"|$",
+					"beginCaptures": { "0": { "name": "punctuation.definition.string.begin.nib" } },
+					"endCaptures": { "0": { "name": "punctuation.definition.string.end.nib" } },
+					"patterns": [{ "include": "#escapes" }, { "include": "#interpolation" }]
+				}
+			]
+		},
+		"escapes": {
+			"name": "constant.character.escape.nib",
+			"match": "\\\\(u\\{[0-9A-Fa-f]+\\}|[ntr0\\\\\"$])"
+		},
+		"interpolation": {
+			"name": "meta.interpolation.nib",
+			"begin": "\\$\\{",
+			"end": "\\}",
+			"beginCaptures": { "0": { "name": "punctuation.section.interpolation.begin.nib" } },
+			"endCaptures": { "0": { "name": "punctuation.section.interpolation.end.nib" } },
+			"contentName": "source.nib.embedded",
+			"patterns": [{ "include": "#code" }]
+		},
+		"braces": {
+			"begin": "\\{",
+			"end": "\\}",
+			"beginCaptures": { "0": { "name": "punctuation.section.block.begin.nib" } },
+			"endCaptures": { "0": { "name": "punctuation.section.block.end.nib" } },
+			"patterns": [{ "include": "#code" }]
+		},
+		"members": {
+			"comment": "Any word can name a member after a dot, so `.new()` and `.get(key)` are names, not keywords.",
+			"patterns": [
+				{
+					"match": "(?<=\\.)([a-z_][A-Za-z0-9_]*)(?=\\s*(<[^<>]*>)?\\()",
+					"captures": { "1": { "name": "entity.name.function.member.nib" } }
+				},
+				{
+					"match": "(?<=\\.)[a-z_][A-Za-z0-9_]*",
+					"name": "variable.other.member.nib"
+				}
+			]
+		},
+		"declarations": {
+			"patterns": [
+				{
+					"match": "\\b(fn)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+					"captures": {
+						"1": { "name": "storage.type.function.nib" },
+						"2": { "name": "entity.name.function.nib" }
+					}
+				},
+				{
+					"match": "\\b(record|class|interface|enum|type|alias)\\s+([A-Z][A-Za-z0-9_]*)",
+					"captures": {
+						"1": { "name": "storage.type.nib" },
+						"2": { "name": "entity.name.type.nib" }
+					}
+				},
+				{
+					"match": "\\b(attribute)\\s+([a-z][A-Za-z0-9]*)",
+					"captures": {
+						"1": { "name": "storage.type.nib" },
+						"2": { "name": "entity.name.type.annotation.nib" }
+					}
+				},
+				{
+					"match": "\\b(const)\\s+([A-Z][A-Z0-9_]*)\\b",
+					"captures": {
+						"1": { "name": "storage.type.nib" },
+						"2": { "name": "constant.other.nib" }
+					}
+				},
+				{
+					"match": "(?:^\\s*|(?<=override\\s))(?:(static)\\s+)?(get)\\s+([a-z_][A-Za-z0-9_]*)",
+					"captures": {
+						"1": { "name": "storage.modifier.nib" },
+						"2": { "name": "storage.type.property.nib" },
+						"3": { "name": "variable.other.property.nib" }
+					}
+				},
+				{
+					"match": "^\\s*(test)\\s+(?=\")",
+					"captures": { "1": { "name": "keyword.other.test.nib" } }
+				},
+				{
+					"match": "^\\s*(expect)\\b",
+					"captures": { "1": { "name": "keyword.other.test.nib" } }
+				},
+				{
+					"comment": "`override` before a member; elsewhere it's an ordinary name.",
+					"match": "^\\s*(?:(?:pub|private)\\s+)?(override)\\s+(?=fn\\b|get\\b|static\\b|mut\\b|lazy\\b|var\\b|[a-z_][A-Za-z0-9_]*\\s*:)",
+					"captures": { "1": { "name": "storage.modifier.nib" } }
+				},
+				{
+					"comment": "A constructor, at the start of a member; elsewhere `construct` is an ordinary name.",
+					"match": "^\\s*(?:(?:pub|private)\\s+)?(construct)(?=\\()",
+					"captures": { "1": { "name": "storage.type.function.nib" } }
+				},
+				{
+					"match": "\\b(named)\\s+(?=[a-z_])",
+					"captures": { "1": { "name": "storage.modifier.nib" } }
+				},
+				{
+					"match": "\\((from)\\s+(?=[A-Z])",
+					"captures": { "1": { "name": "keyword.other.from.nib" } }
+				}
+			]
+		},
+		"labels": {
+			"comment": "Named arguments, fields and parameters: `name:`. Any word can be one, so `use:` is a name, not a keyword.",
+			"match": "\\b([a-z_][A-Za-z0-9_]*)(?=\\s*:(?!:))",
+			"captures": { "1": { "name": "variable.parameter.nib" } }
+		},
+		"keywords": {
+			"patterns": [
+				{
+					"name": "keyword.control.nib",
+					"match": "\\b(if|else|catch|match|return|fail|try|for|in|while|do|break|continue|defer|yield|start)\\b"
+				},
+				{
+					"name": "keyword.other.nib",
+					"match": "\\b(import|as|implements|new|use|when|with)\\b"
+				},
+				{
+					"name": "storage.type.nib",
+					"match": "\\b(fn|let|var|const|record|class|interface|enum|type|alias)\\b"
+				},
+				{
+					"name": "storage.modifier.nib",
+					"match": "\\b(pub|private|static|mut|lazy)\\b"
+				},
+				{
+					"name": "storage.modifier.nib",
+					"match": "\\binternal\\b(?=\\s+[A-Za-z_])"
+				},
+				{
+					"name": "keyword.operator.word.nib",
+					"match": "\\b(and|or|not|is|div|mod)\\b"
+				},
+				{
+					"name": "constant.language.nib",
+					"match": "\\b(true|false|null)\\b"
+				},
+				{
+					"name": "variable.language.this.nib",
+					"match": "\\b(this|This)\\b"
+				}
+			]
+		},
+		"names": {
+			"patterns": [
+				{
+					"name": "constant.other.nib",
+					"match": "\\b[A-Z][A-Z0-9]*_[A-Z0-9_]*\\b|\\b[A-Z]{2,}[0-9]*\\b(?![a-z])"
+				},
+				{
+					"name": "entity.name.type.nib",
+					"match": "\\b[A-Z][A-Za-z0-9]*\\b"
+				},
+				{
+					"match": "\\b([a-z_][A-Za-z0-9_]*)(?=\\s*(<[^<>]*>)?\\()",
+					"captures": { "1": { "name": "entity.name.function.call.nib" } }
+				}
+			]
+		},
+		"operators": {
+			"patterns": [
+				{ "name": "keyword.operator.arrow.nib", "match": "=>|->" },
+				{ "name": "keyword.operator.null.nib", "match": "\\?\\?|\\?\\." },
+				{ "name": "keyword.operator.range.nib", "match": "\\.\\.<?|\\.\\.\\." },
+				{ "name": "keyword.operator.comparison.nib", "match": "==|!=|<=|>=" },
+				{ "name": "keyword.operator.assignment.nib", "match": "\\+=|-=|\\*=|/=|=" },
+				{ "name": "keyword.operator.nib", "match": "[-+*/%<>?!|&]" }
+			]
+		}
+	}
+}

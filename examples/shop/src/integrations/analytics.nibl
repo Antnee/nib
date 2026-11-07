@@ -1,0 +1,23 @@
+import std.http.{ApiClient, HttpError}
+import std.json.{@json}
+import std.money.{Money}
+import shop.orders.{OrderId}
+
+interface Analytics {
+	fn track(event: Event) else HttpError
+}
+
+@json
+enum Event {
+	OrderPlaced(orderId: OrderId, total: Money)
+	SignUpSubmitted
+}
+
+class HttpAnalytics implements Analytics {
+	construct(private api: ApiClient) {}
+
+	override fn track(event: Event) else HttpError {
+		// The client fails on an error status, so the response holds nothing more to check.
+		let _ = try this.api.post(url"events", json: event)
+	}
+}

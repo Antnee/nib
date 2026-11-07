@@ -1,0 +1,6 @@
+# expect: error: `Counter` isn't `pub`, so the package `acme/greet` doesn't export it
+[package]
+name = "demo"
+
+[dependencies]
+greet = { package = "acme/greet", version = "^1.0.0" }

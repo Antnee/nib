@@ -1,0 +1,62 @@
+// expect: ok
+// Closures and shorthand take their parameters' types from where they are passed.
+type Sku: String
+
+record Line {
+	sku: Sku
+	quantity: Int
+	isShort: Bool
+}
+
+enum QuoteError implements Error {
+	Unavailable
+
+	override get message: String => "no quote"
+}
+
+fn quote(line: Line) -> Int else QuoteError {
+	return line.quantity > 0 ? line.quantity : fail QuoteError.Unavailable
+}
+
+record Box<T> {
+	items: List<T>
+
+	static fn empty() -> Box<T> {
+		return Box(items: [])
+	}
+}
+
+record Table<S> {
+	rows: List<Row<S>>
+}
+
+record Row<S> {
+	static fn of(label: String, read: fn(S) -> Int) -> Row<S> {
+		return panic(label)
+	}
+}
+
+fn table() -> Table<Line> {
+	return Table(rows: [Row.of("quantity", fn(l) => l.quantity), Row.of("double", fn(l) => l.quantity * 2)])
+}
+
+fn run(lines: List<Line>) -> Int else QuoteError {
+	let quantities: List<Int> = lines.map(fn(l) => l.quantity)
+	let skus: List<Sku> = lines.map(fn(line) => line.sku)
+	let short: List<Line> = lines.filter(fn(line) => line.isShort)
+	let quotes: List<Int> = try lines.map(fn(l) => try quote(l))
+	let results: List<Result<Int, QuoteError>> = lines.map(fn(l) => quote(l))
+	let totals = lines.map(fn(l) {
+		return l.quantity + 1
+	})
+	let first: Int = totals[0]
+	let pending = start quote(lines[0])
+	let ready: Int = try pending
+	let box: Box<Int> = Box.empty()
+	var count = 0
+	let counted = lines.map(fn(l) use (mut count) {
+		count += 1
+		return l.quantity
+	})
+	return ready + first + count
+}

@@ -1,0 +1,4 @@
+// expect: error: `fill` is a `named` parameter, so the call labels it: `fill: …`
+fn pad(text: String) -> String {
+	return text.padStart(6, "0")
+}

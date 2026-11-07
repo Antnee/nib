@@ -1,0 +1,20 @@
+// expect: error: this `match` gives a value, so each arm is a value, or leaves with `return` or `fail`. To run statements first, declare the variable with `let name: Type` and set it in each arm of a `match` statement
+enum LoadError implements Error {
+	Missing
+	Broken
+
+	override get message: String => "load failed"
+}
+
+fn load(path: String) -> String else LoadError {
+	return path
+}
+
+fn describe(e: LoadError) -> String {
+	return match e {
+		Missing => "missing"
+		Broken => {
+			let word = "broken"
+		}
+	}
+}

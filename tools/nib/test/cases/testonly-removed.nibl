@@ -1,0 +1,5 @@
+// expect: error: unknown attribute `@testOnly`
+@testOnly
+fn helper() -> Int {
+	return 1
+}

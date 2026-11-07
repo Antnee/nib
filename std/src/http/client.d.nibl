@@ -1,0 +1,236 @@
+import std.codec.{Codable, FormCodec, JsonCodec}
+import std.time.{Duration}
+
+/// Makes HTTP calls to absolute URLs. The host grants the process one client with a shared
+/// connection pool, `env.http`; an integration that talks to one service makes an
+/// `ApiClient` from it with `client`.
+///
+/// Every call has a timeout (by default 5 seconds to connect and 30 for the whole call) and
+/// also ends at the deadline of the request it is made for. Calls to private, loopback and
+/// link-local addresses are refused unless the client allows them. Redirects are followed up
+/// to five times for GET and HEAD, never from `https` to `http`. Retries are off.
+///
+/// A call fails with `HttpError.UnexpectedStatus` when the response's status is outside 200 to 299,
+/// unless the call lists that status in `allow`. `headers` are added to that one call, after
+/// the client's own.
+///
+/// ```
+/// let response = try env.http.get(url"https://status.example/ping")
+/// ```
+pub class HttpClient {
+	/// A client for one service: its calls take a relative URL, which is appended to `base`.
+	/// A call times out after `timeout`, or sooner if the request it serves reaches its
+	/// deadline; with no `timeout`, the deadline is the only limit. `headers` go on every
+	/// call, and so does `authorization`, as the `Authorization` header, kept out of logs.
+	///
+	/// A client reaches only public addresses, unless `network` is `Network.Private`, for a
+	/// service inside the app's own network.
+	///
+	/// ```
+	/// let api = env.http.client(base: config.paymentsApi, authorization: secret"Bearer ${apiKey}")
+	/// ```
+	fn client(
+		named base: Url,
+		named timeout: Duration? = null,
+		named headers: Map<String, String> = [:],
+		named authorization: Sensitive? = null,
+		named network: Network = Network.Public,
+	) -> ApiClient
+
+	/// Sends a GET request. `query` is percent-encoded onto the URL. Statuses in `allow`
+	/// are expected answers, returned as responses rather than failures.
+	///
+	/// ```
+	/// let response = try env.http.get(url"https://status.example/ping", allow: [Status.SERVICE_UNAVAILABLE])
+	/// ```
+	fn get(
+		url: Url,
+		named query: Map<String, String> = [:],
+		named headers: Map<String, String> = [:],
+		named allow: List<Status> = [],
+	) -> Response else HttpError
+
+	/// Sends a POST request with no body.
+	fn post(
+		url: Url,
+		named headers: Map<String, String> = [:],
+		named allow: List<Status> = [],
+	) -> Response else HttpError
+
+	/// Sends a POST request with `json` as a JSON body. `T` must have a JSON codec (`@json`).
+	fn post<T: Codable<JsonCodec>>(
+		url: Url,
+		named json: T,
+		named headers: Map<String, String> = [:],
+		named allow: List<Status> = [],
+	) -> Response else HttpError
+
+	/// Sends a POST request with `form` as a form-encoded body. `T` must be a `@form` record.
+	fn post<T: Codable<FormCodec>>(
+		url: Url,
+		named form: T,
+		named headers: Map<String, String> = [:],
+		named allow: List<Status> = [],
+	) -> Response else HttpError
+
+	/// Sends a POST request with a plain-text body.
+	fn post(
+		url: Url,
+		named text: String,
+		named headers: Map<String, String> = [:],
+		named allow: List<Status> = [],
+	) -> Response else HttpError
+
+	/// Sends a POST request with a body of raw bytes.
+	fn post(
+		url: Url,
+		named bytes: Bytes,
+		named headers: Map<String, String> = [:],
+		named allow: List<Status> = [],
+	) -> Response else HttpError
+
+	/// Sends a PUT request with `json` as a JSON body.
+	fn put<T: Codable<JsonCodec>>(
+		url: Url,
+		named json: T,
+		named headers: Map<String, String> = [:],
+		named allow: List<Status> = [],
+	) -> Response else HttpError
+
+	/// Sends a PATCH request with `json` as a JSON body.
+	fn patch<T: Codable<JsonCodec>>(
+		url: Url,
+		named json: T,
+		named headers: Map<String, String> = [:],
+		named allow: List<Status> = [],
+	) -> Response else HttpError
+
+	/// Sends a DELETE request.
+	fn delete(
+		url: Url,
+		named headers: Map<String, String> = [:],
+		named allow: List<Status> = [],
+	) -> Response else HttpError
+}
+
+/// Makes HTTP calls to one service, sharing the process's connection pool. Its calls take
+/// only relative URLs, appended to its base, so a URL built from input can't send it to
+/// another host. Timeouts, redirects, address rules and `allow` work as for `HttpClient`.
+///
+/// ```
+/// let api = env.http.client(base: config.shippingApi, timeout: Duration.of(seconds: 5))
+/// let response = try api.post(url"quotes", json: request)
+/// ```
+pub class ApiClient {
+	/// Sends a GET request. `query` is percent-encoded onto the URL. Statuses in `allow`
+	/// are expected answers, returned as responses rather than failures.
+	///
+	/// ```
+	/// let response = try api.get(url"carts/${id}", allow: [Status.NOT_FOUND])
+	/// ```
+	fn get(
+		url: RelativeUrl,
+		named query: Map<String, String> = [:],
+		named headers: Map<String, String> = [:],
+		named allow: List<Status> = [],
+	) -> Response else HttpError
+
+	/// Sends a POST request with no body.
+	fn post(
+		url: RelativeUrl,
+		named headers: Map<String, String> = [:],
+		named allow: List<Status> = [],
+	) -> Response else HttpError
+
+	/// Sends a POST request with `json` as a JSON body. `T` must have a JSON codec (`@json`).
+	fn post<T: Codable<JsonCodec>>(
+		url: RelativeUrl,
+		named json: T,
+		named headers: Map<String, String> = [:],
+		named allow: List<Status> = [],
+	) -> Response else HttpError
+
+	/// Sends a POST request with `form` as a form-encoded body. `T` must be a `@form` record.
+	fn post<T: Codable<FormCodec>>(
+		url: RelativeUrl,
+		named form: T,
+		named headers: Map<String, String> = [:],
+		named allow: List<Status> = [],
+	) -> Response else HttpError
+
+	/// Sends a POST request with a plain-text body.
+	fn post(
+		url: RelativeUrl,
+		named text: String,
+		named headers: Map<String, String> = [:],
+		named allow: List<Status> = [],
+	) -> Response else HttpError
+
+	/// Sends a POST request with a body of raw bytes.
+	fn post(
+		url: RelativeUrl,
+		named bytes: Bytes,
+		named headers: Map<String, String> = [:],
+		named allow: List<Status> = [],
+	) -> Response else HttpError
+
+	/// Sends a PUT request with `json` as a JSON body.
+	fn put<T: Codable<JsonCodec>>(
+		url: RelativeUrl,
+		named json: T,
+		named headers: Map<String, String> = [:],
+		named allow: List<Status> = [],
+	) -> Response else HttpError
+
+	/// Sends a PATCH request with `json` as a JSON body.
+	fn patch<T: Codable<JsonCodec>>(
+		url: RelativeUrl,
+		named json: T,
+		named headers: Map<String, String> = [:],
+		named allow: List<Status> = [],
+	) -> Response else HttpError
+
+	/// Sends a DELETE request.
+	fn delete(
+		url: RelativeUrl,
+		named headers: Map<String, String> = [:],
+		named allow: List<Status> = [],
+	) -> Response else HttpError
+}
+
+/// Why an HTTP call failed.
+pub enum HttpError implements Error {
+	/// The response's status was outside 200 to 299 and not allowed by the call. It carries
+	/// the response, with a body capped in size.
+	UnexpectedStatus(response: Response)
+	/// The connection couldn't be made.
+	Connect
+	/// The call took longer than its timeout or its request's deadline.
+	Timeout
+	/// The TLS handshake failed, such as for an invalid certificate.
+	Tls
+	/// The response's body was larger than the client accepts.
+	TooLarge
+	/// The address isn't one the client may call: a private, loopback or link-local one, for
+	/// a client that isn't `Network.Private`.
+	Refused
+
+	/// What went wrong, in plain words.
+	override get message: String
+}
+
+/// Which addresses a client may call. A URL can come from anyone, such as a webhook's
+/// target or an avatar's address, and one that points inside the app's network could reach
+/// a database's admin page or the cloud's metadata service. So a client calls only public
+/// addresses unless it says otherwise. The check is made after the name is looked up, and
+/// again on every redirect.
+pub enum Network {
+	/// Public addresses only. Private (`10.0.0.0/8`, `192.168.0.0/16` and the rest), loopback
+	/// (`127.0.0.1`, `::1`) and link-local (`169.254.0.0/16`) addresses are refused, with
+	/// `HttpError.Refused`.
+	Public
+
+	/// Any address, for a client of a service inside the app's own network. Never use it for
+	/// a URL that came from outside the app.
+	Private
+}

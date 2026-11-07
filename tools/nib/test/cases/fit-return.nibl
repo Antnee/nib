@@ -1,0 +1,4 @@
+// expect: error: this is a `Bool`, but `name` returns a `String`
+fn name(flag: Bool) -> String {
+	return flag
+}

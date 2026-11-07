@@ -1,0 +1,6 @@
+import std.app.{App, Env}
+
+pub fn main(env: Env) -> App {
+	let _ = env.db("main")
+	return App()
+}

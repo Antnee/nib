@@ -1,0 +1,11 @@
+// expect: warning: a function that returns nothing leaves out the `->`: drop `-> Void`
+fn greet(name: String) -> Void {
+	print("Hello, ${name}")
+}
+
+// In a function type, `Void` is still written.
+fn each(names: List<String>, visit: fn(String) -> Void) {
+	for name in names {
+		visit(name)
+	}
+}

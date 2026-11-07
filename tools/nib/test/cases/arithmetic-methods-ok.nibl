@@ -1,0 +1,10 @@
+// expect: ok
+import std.time.{Duration, Instant}
+
+fn timing(begun: Instant, end: Instant, attempt: Int) -> Bool {
+	let elapsed = end.since(begun)
+	let limit = Duration.of(seconds: 2).times(attempt).plus(Duration.of(milliseconds: 500))
+	let deadline = begun.plus(limit).minus(Duration.of(seconds: 1))
+	let longer = limit.times(1.5)
+	return elapsed < longer and end < deadline
+}

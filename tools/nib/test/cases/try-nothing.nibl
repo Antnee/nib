@@ -1,0 +1,8 @@
+// expect: error: nothing after this `try` can fail, so it has nothing to pass on: remove it
+fn double(n: Int) -> Int {
+	return n * 2
+}
+
+fn run() -> Int else ParseError {
+	return try double(2)
+}

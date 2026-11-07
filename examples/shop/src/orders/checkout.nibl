@@ -1,0 +1,135 @@
+import std.log
+import std.money.{CurrencyMismatch}
+import std.time.{Clock}
+import access.{Access}
+import shop.core.{RepositoryError, UnitOfWork}
+import shop.users.{User}
+
+/// Checkout spans two systems, our database and the payment provider, and nothing can
+/// commit both atomically. So it's a saga: a sequence of local steps, each one safe to
+/// retry, with an explicit compensating action for the step that can't be undone.
+///
+/// 1. Record the order as pending.          Compensation: mark it failed.
+/// 2. Charge the card (idempotency key).    Compensation: refund.
+/// 3. Mark it paid and empty the cart, as one unit of work.
+///
+/// If step 3 or a compensation fails, the order stays pending: the database has just
+/// failed, so marking it would likely fail too. Reconciliation (not shown) matches it to
+/// the provider's records by its idempotency key.
+class CheckoutService {
+	construct(
+		named private work: UnitOfWork<OrdersWork>,
+		named private carts: CartRepository,
+		named private orders: OrderRepository,
+		named private shipping: ShippingRates,
+		named private taxes: TaxRates,
+		named private inventory: Inventory,
+		named private gateway: PaymentGateway,
+		named private clock: Clock,
+		named private access: Access<User>,
+	) {}
+
+	fn run(cartId: CartId, paymentToken: PaymentToken, named customer: User) -> Receipt else CheckoutError {
+		let cart = try this.carts.find(cartId) ?? fail CheckoutError.CartNotFound
+		// Someone else's cart looks the same as one that doesn't exist.
+		this.access.ensure(customer, can: CartAction.CheckOut, on: cart) catch _ { fail CheckoutError.CartNotFound }
+		if cart.lines.isEmpty {
+			fail CheckoutError.EmptyCart
+		}
+
+		// Three lookups run at the same time. Each is waited for where it's first read, and a
+		// `fail` before then cancels the rest. They run before the order is created, so a slow
+		// or failing lookup leaves nothing to clean up.
+		let shipping = start this.shipping.quote(cart.address, cart.totalWeightGrams())
+		let tax = start this.taxes.calculate(cart.address, cart.subtotal())
+		// A check, not a reservation: stock goes down when the order ships (not shown), so two
+		// customers can still race for the last item.
+		let stock = start cart.lines.mapConcurrently(
+			limit: 5,
+			each: fn(line) => try this.inventory.check(line.sku, line.quantity),
+		)
+
+		let checks = try stock
+		let missing = checks.filter(fn(check) => check.isShort).map(fn(check) => check.sku)
+		if missing.isNotEmpty {
+			fail CheckoutError.OutOfStock(skus: missing)
+		}
+
+		let shippingCost = try shipping
+		let taxDue = try tax
+		let withShipping = try cart.subtotal().plus(shippingCost)
+		let total = try withShipping.plus(taxDue)
+
+		// 1. A pending order, so there's a record even if the charge times out.
+		let order = try this.orders.create(NewOrder(customer: customer.id, total:, placedAt: this.clock.now()))
+		let idempotencyKey = "order-${order.id}"
+
+		// 2. The charge. Retrying with the same key can't charge twice.
+		let payment = this.gateway.charge(paymentToken, total, idempotencyKey:) catch err {
+			// Only a decline is a definite "no". If the provider timed out, the charge may
+			// still have gone through, so the order stays pending for reconciliation.
+			if err is PaymentError.Declined {
+				// The decline is what the customer needs to hear, so failing to record it is
+				// logged rather than put in its place.
+				this.orders.save(order with (status: OrderStatus.PaymentFailed)) catch cause {
+					log.error("couldn't mark a declined order as failed", fields: ["orderId": order.id, "error": cause])
+				}
+			}
+			fail err
+		}
+
+		// 3. The order and the cart change together.
+		this.markPaid(order, payment, cart.id) catch cause {
+			// The card was charged but we couldn't record it. A charge can't be rolled back,
+			// so compensate: refund it, then fail the checkout.
+			this.refund(order, payment)
+			fail cause
+		}
+
+		return Receipt(orderId: order.id, total:, paymentId: payment.id)
+	}
+
+	private fn markPaid(order: Order, payment: Payment, cartId: CartId) else RepositoryError {
+		let work = try this.work.begin()
+		defer work.rollback()
+		try work.orders.save(order with (status: OrderStatus.Paid, paymentId: payment.id))
+		try work.carts.delete(cartId)
+		try work.commit()
+	}
+
+	/// Best effort: a failure is logged for reconciliation rather than returned. The checkout
+	/// fails either way, and the refund's idempotency key makes a later retry safe.
+	private fn refund(order: Order, payment: Payment) {
+		this.gateway.refund(payment.id, idempotencyKey: "refund-${order.id}") catch err {
+			log.error("refund failed; needs reconciliation", fields: [
+				"orderId": order.id,
+				"paymentId": payment.id,
+				"error": err,
+			])
+		}
+	}
+}
+
+enum CheckoutError implements Error {
+	CartNotFound
+	EmptyCart
+	OutOfStock(skus: List<Sku>)
+	PaymentFailed(from PaymentError)
+	ShippingFailed(from ShippingError)
+	TaxFailed(from TaxError)
+	InventoryFailed(from InventoryError)
+	MixedCurrencies(from CurrencyMismatch)
+	Storage(from RepositoryError)
+
+	override get message: String => match this {
+		CheckoutError.CartNotFound => "cart not found"
+		CheckoutError.EmptyCart => "cart is empty"
+		CheckoutError.OutOfStock(skus:) => "out of stock: ${skus.join(", ")}"
+		CheckoutError.PaymentFailed => "payment failed"
+		CheckoutError.ShippingFailed => "couldn't price shipping"
+		CheckoutError.TaxFailed => "couldn't work out the tax"
+		CheckoutError.InventoryFailed => "couldn't check stock"
+		CheckoutError.MixedCurrencies => "cart mixes currencies"
+		CheckoutError.Storage => "couldn't read or save the order"
+	}
+}

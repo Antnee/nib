@@ -1,0 +1,4 @@
+// expect: error: `1.5` has a point, but `counts` is declared as a `List<Int>`, so each item is an `Int`
+fn run() {
+	let counts: List<Int> = [1, 2, 1.5]
+}

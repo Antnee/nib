@@ -1,0 +1,4 @@
+// expect: error: or write `Float` where these numbers are declared if an approximate answer is what you want
+fn run() {
+	let each = 3.95 / 2
+}

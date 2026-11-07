@@ -1,0 +1,75 @@
+import std.html.{Html}
+import std.http.{Url}
+import std.locale.{Locale}
+import shop.users.{Email, TokenPurpose}
+
+// Emails are components too: plain functions returning markup, each with a text version.
+// An email can carry a link with a token in it, so its body is a secret all the way to the
+// mail server, and logging a message can't leak a live token.
+
+fn emailLayout(content: Secret<Html>) -> Secret<Html> {
+	return secret html"""
+		<!doctype html>
+		<html lang="en">
+			<body style="font-family: sans-serif; max-width: 32rem; margin: auto">
+				${content}
+				<p style="color: #666">Shop · hello@shop.example</p>
+			</body>
+		</html>
+		"""
+}
+
+fn emailButton(href: Secret<Url>, named label: String) -> Secret<Html> {
+	return secret html"""
+		<p><a href="${href}" style="padding: .75rem 1rem; background: #222; color: #fff">${label}</a></p>
+		"""
+}
+
+fn confirmEmail(to: Email, link: Secret<Url>, locale: Locale) -> MailMessage {
+	return MailMessage(
+		to:,
+		subject: "Confirm your email address",
+		html: emailLayout(secret html"""
+			<h1>Welcome!</h1>
+			<p>Confirm your email address to finish creating your account.</p>
+			${emailButton(link, label: "Confirm email")}
+			<p>The link works for ${TokenPurpose.Confirm.lifetime.formatted(locale:)}.</p>
+			"""),
+		text: secret"""
+			Confirm your email address: ${link}
+
+			The link works for ${TokenPurpose.Confirm.lifetime.formatted(locale:)}.
+			""",
+	)
+}
+
+fn resetPasswordEmail(to: Email, link: Secret<Url>, locale: Locale) -> MailMessage {
+	return MailMessage(
+		to:,
+		subject: "Reset your password",
+		html: emailLayout(secret html"""
+			<h1>Reset your password</h1>
+			${emailButton(link, label: "Choose a new password")}
+			<p>The link works for ${TokenPurpose.ResetPassword.lifetime.formatted(locale:)}.
+			If you didn't ask for this, you can ignore this email.</p>
+			"""),
+		text: secret"""
+			Choose a new password: ${link}
+
+			The link works for ${TokenPurpose.ResetPassword.lifetime.formatted(locale:)}.
+			""",
+	)
+}
+
+fn accountExistsEmail(to: Email, named signInLink: Url) -> MailMessage {
+	return MailMessage(
+		to:,
+		subject: "You already have an account",
+		html: emailLayout(secret html"""
+			<h1>You already have an account</h1>
+			<p>Someone tried to sign up with this address. If it was you,
+			<a href="${signInLink}">sign in</a> instead.</p>
+			"""),
+		text: secret"Someone tried to sign up with this address. Sign in at ${signInLink}",
+	)
+}

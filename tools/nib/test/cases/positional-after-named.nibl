@@ -1,0 +1,4 @@
+// expect: error: positional arguments come before named ones
+fn f() {
+	g(a: 1, 2)
+}

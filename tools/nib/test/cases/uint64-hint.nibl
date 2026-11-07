@@ -1,0 +1,4 @@
+// expect: error: `UInt` is the 64-bit unsigned integer
+fn run() {
+	let big: UInt64 = 1
+}

@@ -1,0 +1,8 @@
+// expect: error: in a doc-comment example: `Greeter` has no static member `make`
+/// Greets people.
+///
+/// ```
+/// let greeter = Greeter.make()
+/// ```
+class Greeter {
+}

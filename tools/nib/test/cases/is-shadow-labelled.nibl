@@ -1,0 +1,8 @@
+// expect: error: `score` is already declared on line 6; locals and parameters can't shadow each other
+enum ScoreError implements Error {
+	OutOfRange(score: Int)
+	override get message: String => "out of range"
+}
+fn same(score: Int, r: Result<Int, ScoreError>) -> Bool {
+	return r is Err(OutOfRange(score: score))
+}

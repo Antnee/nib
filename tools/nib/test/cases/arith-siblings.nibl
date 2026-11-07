@@ -1,0 +1,8 @@
+// expect: only error: `+` needs both sides to be one type, but this is a `Cents` and a `Qty`
+// Two different kinds of number don't mix.
+type Cents: Int implements Numeric
+type Qty: Int implements Numeric
+
+fn mix(price: Cents, quantity: Qty) -> Int {
+	return price + quantity
+}

@@ -1,0 +1,15 @@
+# Working notes from the design sessions: readers' reports and what each exposed.
+design/cold-reads/
+design/writing-tests/
+design/agenda.md
+design/std-findings.md
+**/FINDINGS.md
+
+# Agent and editor settings.
+.claude/
+.idea/
+
+# Temporary files.
+scratchpad/
+node_modules/
+.DS_Store

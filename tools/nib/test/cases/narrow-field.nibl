@@ -1,0 +1,11 @@
+// expect: error: so it isn't narrowed: put it in a `let` first, as `let nick = this.nick`, then test `nick is not null`
+class Profile {
+	nick: String?
+
+	fn shout() -> String {
+		if this.nick is not null {
+			return this.nick.toUpperCase()
+		}
+		return ""
+	}
+}

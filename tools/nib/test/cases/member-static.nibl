@@ -1,0 +1,4 @@
+// expect: error: `parse` is a static member of `String`: use it on the type, as `String.parse`
+fn read(name: String) {
+	let copy = name.parse("x")
+}

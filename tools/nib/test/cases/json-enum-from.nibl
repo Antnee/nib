@@ -1,0 +1,14 @@
+// expect: only error: `Storage` can't be in a `@json` enum: a payload without a name has no fields
+import std.json.{@json}
+
+enum StorageError implements Error {
+	Lost
+
+	override get message: String => "lost"
+}
+
+@json
+enum Outcome {
+	Done
+	Storage(from StorageError)
+}

@@ -1,0 +1,11 @@
+# expect: error: `pool-size-from = "DB_POOL_SIZE"` names a variable that isn't declared in [config]
+[package]
+name = "demo"
+
+[config]
+DB_URL = { secret = true }
+
+[databases.main]
+engine = "mysql"
+from = "DB_URL"
+pool-size-from = "DB_POOL_SIZE"

@@ -1,0 +1,8 @@
+// expect: error: `items.contains` needs its `T` to be `Equatable`, and `Session` isn't
+class Session {
+	id: String
+}
+
+fn run(items: List<Session>, one: Session) -> Bool {
+	return items.contains(one)
+}

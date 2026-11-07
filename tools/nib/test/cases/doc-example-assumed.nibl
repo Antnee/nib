@@ -1,0 +1,11 @@
+// expect: ok
+// An example may use names the reader is assumed to have, such as `db` and `this`.
+/// Saves a greeter.
+///
+/// ```
+/// let greeter = new Greeter()
+/// try db.save(greeter, this.table)
+/// return greeter
+/// ```
+class Greeter {
+}

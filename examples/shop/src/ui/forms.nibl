@@ -1,0 +1,36 @@
+import std.forms.{@form}
+import shop.orders.{PaymentToken}
+import shop.users.{Email, Password, PasswordAttempt}
+
+@form
+record SignUpForm {
+	email: Email
+	password: Password
+	// Only has to match `password`, so it isn't held to the length rule: a short one is
+	// reported as a mismatch, not as too short.
+	confirmPassword: PasswordAttempt
+}
+
+@form
+record SignInForm {
+	email: Email
+	password: PasswordAttempt
+}
+
+@form
+record EmailForm {
+	email: Email
+}
+
+@form
+record ResetPasswordForm {
+	password: Password
+	// Only has to match `password`, so it isn't held to the length rule: a short one is
+	// reported as a mismatch, not as too short.
+	confirmPassword: PasswordAttempt
+}
+
+@form
+record CheckoutForm {
+	paymentToken: PaymentToken
+}

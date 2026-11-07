@@ -1,0 +1,12 @@
+// expect: error: a getter's body is one expression, after `=>`: anything that needs statements is a method
+class Order {
+	construct(private lines: List<Int>) {}
+
+	get total: Int {
+		var sum = 0
+		for line in this.lines {
+			sum += line
+		}
+		return sum
+	}
+}

@@ -1,0 +1,8 @@
+// expect: error: `Square` implements `Shape` but doesn't define `area`
+interface Shape {
+	fn area() -> Float
+}
+
+record Square implements Shape {
+	side: Float
+}

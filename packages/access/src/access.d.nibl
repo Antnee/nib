@@ -1,0 +1,129 @@
+// Decides whether someone may do something to something.
+//
+// The question is always the same shape: may this user take this action on this subject?
+// Each subject type has its own actions, an enum, and its own voters. A voter looks at one
+// question and allows it, denies it, or abstains. Any denial wins, and if every voter
+// abstains the answer is no, so a subject nobody wrote a voter for is never open by accident.
+//
+// Who the user is comes first, and separately: `Access` decides only what a known user may
+// do. Signing in is the web layer's job.
+//
+// ```
+// enum CartAction {
+// 	View
+// 	CheckOut
+// }
+//
+// let access = new Access<User>().register(new CartOwnerVoter())
+// try access.ensure(user, can: CartAction.CheckOut, on: cart)
+// ```
+
+/// The voters for every subject, and the questions put to them. `U` is the type of user, the
+/// same for every question. Build one in the container, with each voter's dependencies.
+pub class Access<U> {
+	/// An `Access` with no voters yet, so every question is answered no.
+	construct()
+
+	/// This `Access` with `voter` added. It's asked about subjects of type `S` only, and
+	/// about every action on them, in the order voters were registered.
+	fn register<A, S>(voter: Voter<U, A, S>) -> Access<U>
+
+	/// Fails with `AccessDenied` unless `user` may take the action `can` on the subject `on`.
+	///
+	/// ```
+	/// try this.access.ensure(user, can: CartAction.View, on: cart)
+	/// ```
+	fn ensure<A, S>(user: U, named can: A, named on: S) else AccessDenied
+
+	/// The decision, for code that does something other than stop when the answer is no,
+	/// such as hiding a button.
+	///
+	/// ```
+	/// let canCheckOut = this.access.check(user, can: CartAction.CheckOut, on: cart) is Decision.Allowed
+	/// ```
+	fn check<A, S>(user: U, named can: A, named on: S) -> Decision
+}
+
+/// Votes on what users of type `U` may do with subjects of type `S`, whose actions are `A`.
+/// A voter that has no opinion on a question abstains, so several voters can cover one
+/// subject: an owner rule, a role rule and a suspended-account rule, say.
+///
+/// ```
+/// class CartOwnerVoter implements Voter<User, CartAction, Cart> {
+/// 	construct() {}
+///
+/// 	override fn vote(user: User, _: CartAction, cart: Cart) -> Vote {
+/// 		if cart.owner == user.id {
+/// 			return Vote.Allow
+/// 		}
+/// 		return Vote.Deny(code: CartDenial.NotOwner, message: "not the owner")
+/// 	}
+/// }
+/// ```
+pub interface Voter<U, A, S> {
+	fn vote(user: U, action: A, subject: S) -> Vote
+}
+
+/// One voter's answer.
+pub enum Vote {
+	Allow
+
+	/// A refusal. `code` says why, as a value callers can match on. `message` describes it
+	/// for logs; it isn't written for the user.
+	Deny(code: DenialCode, message: String)
+
+	/// No opinion: the question is for another voter.
+	Abstain
+}
+
+/// Why a voter refused: implemented by each voter's own enum of reasons, so code that
+/// handles a refusal can match on them. It asks for nothing else.
+///
+/// ```
+/// enum CartDenial implements DenialCode {
+/// 	NotOwner
+/// }
+/// ```
+pub interface DenialCode {}
+
+/// The reasons `Access` gives itself, when no voter denied.
+pub enum AccessDenial implements DenialCode {
+	/// Every voter abstained, or none was registered for the subject's type.
+	NobodyAllowed
+}
+
+/// The answer to a question put to `Access`.
+pub enum Decision {
+	Allowed
+	Denied(reason: Reason)
+}
+
+/// Why a question was answered no, with every vote, for logs and audits.
+pub record Reason {
+	/// The type of the voter that denied, or null when nobody allowed.
+	decidedBy: String?
+
+	/// The denying voter's code, or `AccessDenial.NobodyAllowed`.
+	code: DenialCode
+
+	/// The denying voter's message, for logs.
+	message: String
+
+	/// Every voter's vote, in the order they were asked.
+	votes: List<VoteRecord>
+}
+
+/// One voter's vote on a question.
+pub record VoteRecord {
+	/// The voter's type, such as `CartOwnerVoter`.
+	voter: String
+	vote: Vote
+}
+
+/// The failure from `Access.ensure`.
+pub record AccessDenied implements Error {
+	reason: Reason
+
+	/// "access denied", followed by the reason's message.
+	override get message: String
+}

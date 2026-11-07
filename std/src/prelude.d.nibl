@@ -1,0 +1,1056 @@
+// The prelude: names available in every file without an import.
+
+// ---------------------------------------------------------------------------------------
+// Interfaces
+
+/// Something that went wrong, with a message for developers and logs. Every type a function
+/// fails with (`-> T else E`) implements it, so every error can be logged with its whole
+/// chain of causes. Text that people see is chosen by the page that shows it, never taken
+/// from `message`. A result that isn't a failure, such as "not found" where that's normal,
+/// belongs in the return type, as an enum, rather than here.
+///
+/// An error can wrap the one that caused it. `message` describes this layer only, and never
+/// repeats the cause's message: whatever prints an error (a log, a failed `main`) follows
+/// the chain and joins the messages with `: `, as in `couldn't load the configuration:
+/// DATABASE_URL is missing`. It also prints the error's `trace`, the places it passed
+/// through.
+///
+/// ```
+/// enum ImportError implements Error {
+/// 	Files(from FileError)
+/// 	Empty
+///
+/// 	override get message: String => match this {
+/// 		ImportError.Files => "couldn't read the import"
+/// 		ImportError.Empty => "the import has no rows"
+/// 	}
+/// }
+/// ```
+///
+/// In an enum that implements `Error`, a `from` variant's payload is its `cause`, and the
+/// compiler writes `cause` to say so; that payload must implement `Error` too, so the chain
+/// can't stop early. Code that reacts to a particular cause matches the enum's variants,
+/// which are typed, rather than searching the chain.
+pub interface Error {
+	/// A short description of what went wrong at this layer, without the cause's.
+	get message: String
+
+	/// The error that caused this one, if any.
+	get cause: Error? => null
+
+	/// Where this failure happened: the `fail` that started it, then each `try` or `fail` that
+	/// passed it on, through every wrap, ending with the latest. The compiler records it for
+	/// every error. It isn't part of the error's value, so two errors are equal wherever they
+	/// happened.
+	get trace: List<SourceLocation> => []
+
+	/// This error, then its cause, then that one's cause, and so on.
+	fn chain() -> List<Error> {
+		var errors: List<Error> = [this]
+		var next = this.cause
+		while next is not null {
+			errors.push(next)
+			next = next.cause
+		}
+		return errors
+	}
+}
+
+/// An error that every caller handles where it happens, with `catch` straight after the
+/// call, such as a form that doesn't decode, which is shown again. Passing one on would turn
+/// it into a failure it isn't: a form with an empty field would become an error page. So
+/// `try` can pass one on only to a function that fails with this kind of error itself, and
+/// no `from` variant takes one, not even `from Error`.
+///
+/// ```
+/// let form = req.body.form<SignInForm>() catch err {
+/// 	return Response.html(signInPage(err.state), status: Status.UNPROCESSABLE_CONTENT)
+/// }
+/// ```
+pub interface HandledAtCall implements Error {}
+
+/// Can be built from text. Forms, query strings, configuration, command-line arguments and
+/// path parameters build each field through it.
+///
+/// An implementation may fail with a more specific error than `Error`:
+///
+/// ```
+/// type Email: private String implements Parseable {
+/// 	override static fn parse(text: String) -> Email else EmailError {
+/// 		return Email(text.trim().toLowerCase())
+/// 	}
+/// }
+/// ```
+pub interface Parseable {
+	/// Builds a value from text, or says why it can't.
+	static fn parse(text: String) -> This else Error
+}
+
+/// A value with a form for user-facing text. `${x}` in a string literal calls
+/// `toString()`; inside `html"…"` the result is escaped. Built-in scalars, backed enums and
+/// distinct types over them have it without an `implements`; a backed enum's text is its
+/// value, so `${InputKind.Email}` is `email`. A `@sensitive` type doesn't
+/// have it, so a secret can't end up in a string by accident: build one with `secret"…"`.
+pub interface Stringable {
+	/// The value as text for people to read.
+	fn toString() -> String
+}
+
+/// Something a `for` loop can go through: a collection, a range, a stream of rows or
+/// bytes, a channel, or the result of a generator (a function whose body uses `yield`).
+///
+/// `map`, `filter`, `take` and `batched` give another `Iterable` without reading anything:
+/// the work happens as the result is read, one item at a time. A `List`'s own `map` and
+/// `filter` work at once and give a `List`; the return type says which you have.
+pub interface Iterable<T, E: Error = Never> {
+	/// A new iterator, starting at the beginning.
+	fn iterator() -> Iterator<T, E>
+
+	/// Each item changed by `transform`, as it's read.
+	fn map<U>(transform: fn(T) -> U) -> Iterable<U, E> {
+		for item in try this {
+			yield transform(item)
+		}
+	}
+
+	/// The items for which `keep` is true, as they're read.
+	fn filter(keep: fn(T) -> Bool) -> Iterable<T, E> {
+		for item in try this {
+			if keep(item) {
+				yield item
+			}
+		}
+	}
+
+	/// The first `count` items, reading no further.
+	fn take(count: Int) -> Iterable<T, E> {
+		if count <= 0 {
+			return
+		}
+		var taken = 0
+		for item in try this {
+			yield item
+			taken++
+			if taken == count {
+				return
+			}
+		}
+	}
+
+	/// Each item with its position, counting from 0, as it's read.
+	///
+	/// ```
+	/// for (i, name) in ["Ann", "Bob"].indexed() {
+	/// 	print("${i + 1}. ${name}")
+	/// }
+	/// ```
+	fn indexed() -> Iterable<(Int, T), E> {
+		var i = 0
+		for item in try this {
+			yield (i, item)
+			i++
+		}
+	}
+
+	/// Every item, read now, in a list.
+	fn toList() -> List<T> else E {
+		var items: List<T> = []
+		for item in try this {
+			items.push(item)
+		}
+		return items
+	}
+
+	/// The items in lists of `size`, the last of which may be shorter, so they can be saved or
+	/// sent a batch at a time.
+	fn batched(size: Int) -> Iterable<List<T>, E> {
+		var batch: List<T> = []
+		for item in try this {
+			batch.push(item)
+			if batch.length == size {
+				yield batch
+				batch = []
+			}
+		}
+		if batch.isNotEmpty {
+			yield batch
+		}
+	}
+}
+
+/// Produces items one at a time. `E` is the error a step can fail with; an iterator that
+/// can't fail leaves it out, as `Iterator<T>`. A loop over one that can fail says `try`,
+/// which covers every step:
+///
+/// ```
+/// for row in try db.rows<OrderIdRow>(sql"select id from orders order by id") {
+/// 	print(row.id.toString())
+/// }
+/// ```
+pub interface Iterator<T, E: Error = Never> {
+	/// An iterator that calls `next` for each item, until it returns null.
+	static fn from(next: fn() -> T? else E) -> Iterator<T, E>
+
+	/// The next item, or null when there are no more.
+	mut fn next() -> T? else E
+}
+
+/// What every backed enum provides, without an `implements`: an enum declared with a
+/// backing type (`enum Currency: String { Gbp = "GBP" }`) converts to and from its values.
+pub interface BackedEnum<V> {
+	/// The variant with this backing value, or null if there isn't one.
+	static fn fromValue(value: V) -> This?
+
+	/// The variant's backing value.
+	get value: V
+}
+
+/// Equality. Records, enums and distinct types have it automatically, compared field by
+/// field, and the built-in value types declare it. A class implements it itself, and then
+/// `a == b` calls `equals`.
+pub interface Equatable {
+	/// Whether this and `other` are equal.
+	fn equals(other: This) -> Bool
+}
+
+/// An order between values. Provides `<`, `<=`, `>` and `>=`, sorting, `min` and `max`.
+pub interface Comparable {
+	/// Whether this comes before, at the same place as, or after `other`.
+	fn compare(other: This) -> Ordering
+}
+
+/// Can be a `Map` key or a `Set` element.
+pub interface Hashable {
+	/// A hash of the value. Equal values have equal hashes.
+	fn hash() -> Int
+}
+
+/// A number type with `+`, `-`, `*` and a zero, so that `sum()` works on a list of it.
+/// The built-in number types implement it. A distinct type has arithmetic only if it
+/// implements it too, as `type Qty: Int implements Numeric` does, since most distinct types,
+/// such as an `OrderId`, are identities.
+pub interface Numeric {}
+
+/// Can be empty, like a string or a collection. `a ?: b` gives `b` when `a` is empty.
+pub interface Emptiable {
+	/// Whether there is nothing in it.
+	get isEmpty: Bool
+
+	/// Whether there is something in it.
+	get isNotEmpty: Bool => not this.isEmpty
+}
+
+// ---------------------------------------------------------------------------------------
+// Supporting types
+
+/// How to round a number that has more digits than are kept. The names say what happens to
+/// negative numbers too: on -2.5, `HalfAwayFromZero` gives -3 and `Ceiling` gives -2.
+///
+/// | | 2.5 | -2.5 | 2.4 |
+/// |---|---|---|---|
+/// | `HalfToEven` | 2 | -2 | 2 |
+/// | `HalfAwayFromZero` | 3 | -3 | 2 |
+/// | `HalfTowardZero` | 2 | -2 | 2 |
+/// | `AwayFromZero` | 3 | -3 | 3 |
+/// | `TowardZero` | 2 | -2 | 2 |
+/// | `Ceiling` | 3 | -2 | 3 |
+/// | `Floor` | 2 | -3 | 2 |
+pub enum Rounding {
+	/// To the nearest, and a half to the even digit, so halves don't drift a sum up or down.
+	/// The rule in accounting and IEEE 754.
+	HalfToEven
+
+	/// To the nearest, and a half away from zero. The rule most people learn at school, and
+	/// PHP's `round`.
+	HalfAwayFromZero
+
+	/// To the nearest, and a half toward zero.
+	HalfTowardZero
+
+	/// Away from zero, whatever the dropped digits.
+	AwayFromZero
+
+	/// Toward zero, dropping the extra digits.
+	TowardZero
+
+	/// Toward positive infinity.
+	Ceiling
+
+	/// Toward negative infinity.
+	Floor
+}
+
+/// When a formatted number shows its sign.
+pub enum Sign {
+	/// Only a minus, for negative numbers: `-5` and `5`.
+	WhenNegative
+
+	/// A plus or a minus: `-5` and `+5`, as for a change or an offset.
+	Always
+}
+
+/// How a `Float` is written.
+pub enum Notation {
+	/// Plain digits: `1500.0`.
+	Fixed
+
+	/// A number from 1 to 10 times a power of ten: `1.5e3`.
+	Scientific
+}
+
+/// The answer of `Comparable.compare`.
+pub enum Ordering {
+	Less
+	Equal
+	Greater
+}
+
+/// Where a call was made from. A parameter marked `@callerLocation` is filled in with one
+/// by the compiler when the caller leaves it out.
+pub record SourceLocation {
+	module: String
+	file: String
+	line: Int
+	function: String
+}
+
+/// Why text couldn't be read as a built-in type, as in `Int.parse("4x2")`.
+pub record ParseError implements Error {
+	/// What was wrong with the text.
+	override get message: String
+}
+
+// ---------------------------------------------------------------------------------------
+// Basic types
+
+/// `true` or `false`. `if`, `while`, `and`, `or` and `not` take only a `Bool`.
+pub record Bool implements Equatable, Hashable, Parseable, Stringable {
+	/// Reads `true` or `false`.
+	override static fn parse(text: String) -> Bool else ParseError
+}
+
+/// The result of a function that returns nothing useful. It has one value.
+pub record Void {}
+
+/// The type of an expression that never finishes: `return`, `fail`, `panic(…)`, `todo(…)`.
+/// It has no values, so it fits wherever any type is expected.
+pub enum Never {}
+
+/// Either a success value or an error. Written `-> T else E` in a signature, and handled
+/// with `try`, `else` or `match`.
+pub enum Result<T, E: Error> {
+	Ok(T)
+	Err(E)
+
+	/// The value, or `null` if this is an error. Drops the error on purpose.
+	fn ok() -> T?
+
+	/// The value. Panics with `message` if this is an error, for failures that would be a
+	/// bug.
+	fn orPanic(message: String, @callerLocation loc: SourceLocation) -> T
+
+	/// The same result with its error converted by `f`.
+	fn mapError<F: Error>(f: fn(E) -> F) -> T else F
+}
+
+// ---------------------------------------------------------------------------------------
+// Numbers
+
+/// A 64-bit signed integer, the usual integer type, and the only 64-bit signed one: there is
+/// no `Int64`. A number written without a point, such as `42`, is an `Int` unless its type
+/// says otherwise. Overflow panics. Integers divide with `div` and `mod`, not `/`.
+pub record Int implements Equatable, Comparable, Hashable, Numeric, Parseable, Stringable {
+	/// Reads a decimal integer, such as `-42`.
+	override static fn parse(text: String) -> Int else ParseError
+
+	/// The same value as a `Decimal`, for arithmetic with one.
+	fn toDecimal() -> Decimal
+
+	/// The nearest `Float`, for arithmetic with one. Integers beyond 2^53 may lose their
+	/// last digits.
+	fn toFloat() -> Float
+
+	/// The value in decimal digits, such as `-42`.
+	override fn toString() -> String
+
+	/// The value as text, for interpolation: `${id.formatted(width: 6, fill: "0")}` is
+	/// `000042`. `width` pads to at least that many characters with `fill`; zeros go after
+	/// the sign (`-00042`), anything else before it. `grouping` separates thousands with
+	/// commas. `base` is 2 to 36 (`255.formatted(base: 16)` is `ff`), with `uppercase` for
+	/// `FF`.
+	fn formatted(
+		named width: Int = 0,
+		named fill: String = " ",
+		named sign: Sign = Sign.WhenNegative,
+		named grouping: Bool = false,
+		named base: Int = 10,
+		named uppercase: Bool = false,
+	) -> String
+
+	/// The value as another integer type, or `null` if it doesn't fit.
+	fn toInt8() -> Int8?
+	fn toInt16() -> Int16?
+	fn toInt32() -> Int32?
+	fn toUInt8() -> UInt8?
+	fn toUInt16() -> UInt16?
+	fn toUInt32() -> UInt32?
+	fn toUInt() -> UInt?
+}
+
+/// An 8-bit signed integer.
+pub record Int8 implements Equatable, Comparable, Hashable, Numeric, Parseable, Stringable {
+	override static fn parse(text: String) -> Int8 else ParseError
+	fn toInt() -> Int
+	override fn toString() -> String
+
+	/// The value as text, for interpolation: `${id.formatted(width: 6, fill: "0")}` is
+	/// `000042`. `width` pads to at least that many characters with `fill`; zeros go after
+	/// the sign (`-00042`), anything else before it. `grouping` separates thousands with
+	/// commas. `base` is 2 to 36 (`255.formatted(base: 16)` is `ff`), with `uppercase` for
+	/// `FF`.
+	fn formatted(
+		named width: Int = 0,
+		named fill: String = " ",
+		named sign: Sign = Sign.WhenNegative,
+		named grouping: Bool = false,
+		named base: Int = 10,
+		named uppercase: Bool = false,
+	) -> String
+}
+
+/// A 16-bit signed integer.
+pub record Int16 implements Equatable, Comparable, Hashable, Numeric, Parseable, Stringable {
+	override static fn parse(text: String) -> Int16 else ParseError
+	fn toInt() -> Int
+	override fn toString() -> String
+
+	/// The value as text, for interpolation: `${id.formatted(width: 6, fill: "0")}` is
+	/// `000042`. `width` pads to at least that many characters with `fill`; zeros go after
+	/// the sign (`-00042`), anything else before it. `grouping` separates thousands with
+	/// commas. `base` is 2 to 36 (`255.formatted(base: 16)` is `ff`), with `uppercase` for
+	/// `FF`.
+	fn formatted(
+		named width: Int = 0,
+		named fill: String = " ",
+		named sign: Sign = Sign.WhenNegative,
+		named grouping: Bool = false,
+		named base: Int = 10,
+		named uppercase: Bool = false,
+	) -> String
+}
+
+/// A 32-bit signed integer.
+pub record Int32 implements Equatable, Comparable, Hashable, Numeric, Parseable, Stringable {
+	override static fn parse(text: String) -> Int32 else ParseError
+	fn toInt() -> Int
+	override fn toString() -> String
+
+	/// The value as text, for interpolation: `${id.formatted(width: 6, fill: "0")}` is
+	/// `000042`. `width` pads to at least that many characters with `fill`; zeros go after
+	/// the sign (`-00042`), anything else before it. `grouping` separates thousands with
+	/// commas. `base` is 2 to 36 (`255.formatted(base: 16)` is `ff`), with `uppercase` for
+	/// `FF`.
+	fn formatted(
+		named width: Int = 0,
+		named fill: String = " ",
+		named sign: Sign = Sign.WhenNegative,
+		named grouping: Bool = false,
+		named base: Int = 10,
+		named uppercase: Bool = false,
+	) -> String
+}
+
+/// An 8-bit unsigned integer, such as one byte.
+pub record UInt8 implements Equatable, Comparable, Hashable, Numeric, Parseable, Stringable {
+	override static fn parse(text: String) -> UInt8 else ParseError
+	fn toInt() -> Int
+	override fn toString() -> String
+
+	/// The value as text, for interpolation: `${id.formatted(width: 6, fill: "0")}` is
+	/// `000042`. `width` pads to at least that many characters with `fill`; zeros go after
+	/// the sign (`-00042`), anything else before it. `grouping` separates thousands with
+	/// commas. `base` is 2 to 36 (`255.formatted(base: 16)` is `ff`), with `uppercase` for
+	/// `FF`.
+	fn formatted(
+		named width: Int = 0,
+		named fill: String = " ",
+		named sign: Sign = Sign.WhenNegative,
+		named grouping: Bool = false,
+		named base: Int = 10,
+		named uppercase: Bool = false,
+	) -> String
+}
+
+/// A 16-bit unsigned integer.
+pub record UInt16 implements Equatable, Comparable, Hashable, Numeric, Parseable, Stringable {
+	override static fn parse(text: String) -> UInt16 else ParseError
+	fn toInt() -> Int
+	override fn toString() -> String
+
+	/// The value as text, for interpolation: `${id.formatted(width: 6, fill: "0")}` is
+	/// `000042`. `width` pads to at least that many characters with `fill`; zeros go after
+	/// the sign (`-00042`), anything else before it. `grouping` separates thousands with
+	/// commas. `base` is 2 to 36 (`255.formatted(base: 16)` is `ff`), with `uppercase` for
+	/// `FF`.
+	fn formatted(
+		named width: Int = 0,
+		named fill: String = " ",
+		named sign: Sign = Sign.WhenNegative,
+		named grouping: Bool = false,
+		named base: Int = 10,
+		named uppercase: Bool = false,
+	) -> String
+}
+
+/// A 32-bit unsigned integer.
+pub record UInt32 implements Equatable, Comparable, Hashable, Numeric, Parseable, Stringable {
+	override static fn parse(text: String) -> UInt32 else ParseError
+	fn toInt() -> Int
+	override fn toString() -> String
+
+	/// The value as text, for interpolation: `${id.formatted(width: 6, fill: "0")}` is
+	/// `000042`. `width` pads to at least that many characters with `fill`; zeros go after
+	/// the sign (`-00042`), anything else before it. `grouping` separates thousands with
+	/// commas. `base` is 2 to 36 (`255.formatted(base: 16)` is `ff`), with `uppercase` for
+	/// `FF`.
+	fn formatted(
+		named width: Int = 0,
+		named fill: String = " ",
+		named sign: Sign = Sign.WhenNegative,
+		named grouping: Bool = false,
+		named base: Int = 10,
+		named uppercase: Bool = false,
+	) -> String
+}
+
+/// A 64-bit unsigned integer, and the only 64-bit unsigned one: there is no `UInt64`. Like
+/// `Int`, a type without a width is the 64-bit one.
+pub record UInt implements Equatable, Comparable, Hashable, Numeric, Parseable, Stringable {
+	override static fn parse(text: String) -> UInt else ParseError
+
+	/// The value as an `Int`, or `null` if it is too large for one.
+	fn toInt() -> Int?
+
+	override fn toString() -> String
+
+	/// The value as text, for interpolation: `${id.formatted(width: 6, fill: "0")}` is
+	/// `000042`. `width` pads to at least that many characters with `fill`; zeros go after
+	/// the sign (`-00042`), anything else before it. `grouping` separates thousands with
+	/// commas. `base` is 2 to 36 (`255.formatted(base: 16)` is `ff`), with `uppercase` for
+	/// `FF`.
+	fn formatted(
+		named width: Int = 0,
+		named fill: String = " ",
+		named sign: Sign = Sign.WhenNegative,
+		named grouping: Bool = false,
+		named base: Int = 10,
+		named uppercase: Bool = false,
+	) -> String
+}
+
+/// A 64-bit binary floating-point number. Not exact: use `Decimal` for money. A number
+/// written with a point is a `Decimal` unless its type says `Float`:
+///
+/// ```
+/// let ratio: Float = 0.5
+/// ```
+pub record Float implements Equatable, Comparable, Numeric, Parseable, Stringable {
+	override static fn parse(text: String) -> Float else ParseError
+	override fn toString() -> String
+
+	/// The value as text, for interpolation. With `places`, exactly that many digits after
+	/// the point, trailing zeros kept (`2.5.formatted(places: 2)` is `2.50`), rounded to the
+	/// nearest with halves to even; without it, the fewest digits that read back as the same
+	/// value. `notation: Notation.Scientific` writes `1.5e3`. `width`, `fill`, `sign` and
+	/// `grouping` work as for `Int`.
+	fn formatted(
+		named places: Int? = null,
+		named notation: Notation = Notation.Fixed,
+		named width: Int = 0,
+		named fill: String = " ",
+		named sign: Sign = Sign.WhenNegative,
+		named grouping: Bool = false,
+	) -> String
+}
+
+/// A 32-bit binary floating-point number.
+pub record Float32 implements Equatable, Comparable, Numeric, Parseable, Stringable {
+	override static fn parse(text: String) -> Float32 else ParseError
+	override fn toString() -> String
+
+	/// The value as text, for interpolation. With `places`, exactly that many digits after
+	/// the point, trailing zeros kept (`2.5.formatted(places: 2)` is `2.50`), rounded to the
+	/// nearest with halves to even; without it, the fewest digits that read back as the same
+	/// value. `notation: Notation.Scientific` writes `1.5e3`. `width`, `fill`, `sign` and
+	/// `grouping` work as for `Int`.
+	fn formatted(
+		named places: Int? = null,
+		named notation: Notation = Notation.Fixed,
+		named width: Int = 0,
+		named fill: String = " ",
+		named sign: Sign = Sign.WhenNegative,
+		named grouping: Bool = false,
+	) -> String
+}
+
+/// An exact base-10 number, for money and anything else that must not drift. `+`, `-` and
+/// `*` are exact. There is no `/`, because most divisions have no exact answer: `dividedBy`
+/// says how many places to keep and how to round. Every operation that may round takes a
+/// `Rounding`, with no default. A number written with a point, such as `4.50`, is a
+/// `Decimal` unless its type says otherwise.
+///
+/// ```
+/// let price = 4.50
+/// let pence = price.movePoint(right: 2).toInt() ?? panic("a price has at most two places")
+/// let share = price.dividedBy(3, places: 2, rounding: Rounding.HalfToEven)
+/// ```
+pub record Decimal implements Equatable, Comparable, Hashable, Numeric, Parseable, Stringable {
+	/// Reads a decimal number, such as `-12.50`.
+	override static fn parse(text: String) -> Decimal else ParseError
+
+	/// This divided by `divisor`, to `places` digits after the point, rounded as `rounding`
+	/// says. Panics if `divisor` is zero.
+	fn dividedBy(divisor: Decimal, named places: Int, named rounding: Rounding) -> Decimal
+
+	/// Rounded to `places` digits after the point.
+	fn rounded(named places: Int, named rounding: Rounding) -> Decimal
+
+	/// Rounded to a whole number. Panics if the result doesn't fit in an `Int`.
+	fn roundedToInt(named rounding: Rounding) -> Int
+
+	/// The value as an `Int` if it is whole and fits, or `null`. For conversions that must be
+	/// exact, such as an amount to minor units, where rounding would hide a bug.
+	fn toInt() -> Int?
+
+	/// Split into `into` parts with `places` digits after the point, which add up to exactly
+	/// this value. Parts that differ get one more unit in the last place, first parts first:
+	/// `10.00.allocate(into: 3, places: 2)` is `[3.34, 3.33, 3.33]`.
+	fn allocate(named into: Int, named places: Int) -> List<Decimal>
+
+	/// Split in proportion to `ratios`, with `places` digits after the point, so the parts add
+	/// up to exactly this value. What rounding leaves over goes, a unit at a time, to the
+	/// parts that rounding reduced most: `10.00.allocate(by: [1, 2], places: 2)` is
+	/// `[3.33, 6.67]`.
+	fn allocate(named by: List<Int>, named places: Int) -> List<Decimal>
+
+	/// Multiplied by 10 to the power of `right`: `4.5.movePoint(right: 2)` is `450`. Exact.
+	fn movePoint(named right: Int) -> Decimal
+
+	/// Divided by 10 to the power of `left`: `450.movePoint(left: 2)` is `4.50`. Exact.
+	fn movePoint(named left: Int) -> Decimal
+
+	/// The value with as many digits after the point as it has.
+	override fn toString() -> String
+
+	/// The value as text, for interpolation, with as many digits after the point as it has.
+	/// `width`, `fill`, `sign` and `grouping` work as for `Int`.
+	fn formatted(
+		named width: Int = 0,
+		named fill: String = " ",
+		named sign: Sign = Sign.WhenNegative,
+		named grouping: Bool = false,
+	) -> String
+
+	/// The value as text with exactly `places` digits after the point, trailing zeros kept,
+	/// rounded as `rounding` says if it has more.
+	///
+	/// ```
+	/// let total = 1234.5
+	/// print("Total: ${total.formatted(places: 2, rounding: Rounding.HalfToEven, grouping: true)}")
+	/// ```
+	fn formatted(
+		named places: Int,
+		named rounding: Rounding,
+		named width: Int = 0,
+		named fill: String = " ",
+		named sign: Sign = Sign.WhenNegative,
+		named grouping: Bool = false,
+	) -> String
+}
+
+// ---------------------------------------------------------------------------------------
+// Text and bytes
+
+/// Immutable UTF-8 text. Lengths and positions count graphemes (what a reader sees as one
+/// character), unless the name says otherwise.
+pub record String implements Equatable, Comparable, Hashable, Parseable, Emptiable, Stringable {
+	/// Returns the text unchanged; lets codecs treat `String` fields like any other.
+	override static fn parse(text: String) -> String else ParseError
+
+	/// The number of graphemes.
+	get length: Int
+
+	/// The number of bytes in its UTF-8 encoding.
+	get byteLength: Int
+
+	/// The number of Unicode code points.
+	get codePointLength: Int
+
+	override get isEmpty: Bool
+
+	/// The first grapheme, or `null` if the text is empty.
+	get first: String?
+
+	/// The last grapheme, or `null` if the text is empty.
+	get last: String?
+
+	/// The graphemes from position `from` up to, but not including, position `until`. Panics if
+	/// either is outside the string, as indexing does.
+	fn slice(named from: Int, named until: Int) -> String
+
+	/// Whether `part` appears anywhere in the text.
+	fn contains(part: String) -> Bool
+
+	/// Whether the text begins with `part`.
+	fn startsWith(part: String) -> Bool
+
+	/// Whether the text ends with `part`.
+	fn endsWith(part: String) -> Bool
+
+	/// The pieces of the text between each `separator`. With `limit`, at most that many
+	/// pieces: the last one holds the rest of the text, separators included.
+	///
+	/// ```
+	/// "a,b,c".split(",")            // ["a", "b", "c"]
+	/// "a,b,c".split(",", limit: 2)  // ["a", "b,c"]
+	/// ```
+	fn split(separator: String, named limit: Int? = null) -> List<String>
+
+	/// The text with every occurrence of `part` replaced `by` another.
+	///
+	/// ```
+	/// "a-b-c".replace("-", by: "+")  // "a+b+c"
+	/// ```
+	fn replace(part: String, named by: String) -> String
+
+	/// The position of the first occurrence of `part`, in graphemes as `slice` counts them, or
+	/// `null` if it doesn't appear.
+	fn indexOf(part: String) -> Int?
+
+	/// The text split into lines, at `\n` or `\r\n`. A newline at the very end doesn't add an
+	/// empty last line.
+	///
+	/// ```
+	/// "one\r\ntwo\n".lines()  // ["one", "two"]
+	/// ```
+	fn lines() -> List<String>
+
+	/// Whether `part` appears nowhere in the text.
+	fn doesNotContain(part: String) -> Bool
+
+	/// The text without whitespace at either end.
+	fn trim() -> String
+
+	fn toLowerCase() -> String
+	fn toUpperCase() -> String
+
+	/// The text with `fill` repeated in front until it is `length` graphemes long:
+	/// `"42".padStart(6, fill: "0")` is `000042`.
+	fn padStart(length: Int, named fill: String = " ") -> String
+
+	/// The text with `fill` repeated after it until it is `length` graphemes long, as for a
+	/// column in a table: `"Tea".padEnd(6)` is `Tea   `.
+	fn padEnd(length: Int, named fill: String = " ") -> String
+
+	/// The text's UTF-8 encoding, such as for writing it to a file or a stream.
+	fn toBytes() -> Bytes
+}
+
+/// Immutable binary data. Two compared with `==` take the same time wherever they differ,
+/// because bytes often hold a signature or a hash, which a guess mustn't learn about.
+pub record Bytes implements Equatable, Hashable, Emptiable {
+	/// The bytes of each part, one after another.
+	///
+	/// ```
+	/// let signed = Bytes.concat([timestamp.toBytes(), body])
+	/// ```
+	static fn concat(parts: List<Bytes>) -> Bytes
+
+	/// The number of bytes.
+	get length: Int
+
+	override get isEmpty: Bool
+
+	/// The bytes as lower-case hexadecimal, two digits each.
+	get hex: String
+}
+
+// ---------------------------------------------------------------------------------------
+// Collections
+//
+// Lists, maps and sets are values: changing one held in a `var` changes only that copy.
+// `x[k]` panics when the index or key is missing; `x.get(k)` returns `null` instead.
+
+/// An ordered list, written `[a, b, c]`.
+///
+/// Functions that take a closure can fail if the closure can: `try orders.map(fn(o) => try
+/// quote(o))` stops at the first failure.
+pub record List<T> implements Emptiable, Iterable<T> {
+	/// The number of items.
+	get length: Int
+
+	override get isEmpty: Bool
+
+	/// The first item, or `null` if the list is empty.
+	get first: T?
+
+	/// The last item, or `null` if the list is empty.
+	get last: T?
+
+	/// The only item, or `null` if there are none or more than one.
+	get single: T?
+
+	/// The item at `index`, counting from 0, or `null` if there isn't one.
+	fn get(index: Int) -> T?
+
+	/// Adds an item at the end.
+	mut fn push(item: T)
+
+	/// A new list with `transform` applied to each item, in order, worked out at once.
+	override fn map<U, E: Error>(transform: fn(T) -> U else E) -> List<U> else E
+
+	/// Like `map`, but runs up to `limit` calls at once. The results keep the input order.
+	/// The first failure cancels the calls still running.
+	///
+	/// ```
+	/// let quotes = try orders.mapConcurrently(limit: 10, each: fn(o) => try pricing.quote(o))
+	/// ```
+	fn mapConcurrently<U, E: Error>(named limit: Int, named each: fn(T) -> U else E) -> List<U> else E
+
+	/// The items for which `keep` is true, in order, worked out at once.
+	override fn filter<E: Error>(keep: fn(T) -> Bool else E) -> List<T> else E
+
+	/// The first item for which `test` is true, or `null`.
+	fn firstMatch<E: Error>(test: fn(T) -> Bool else E) -> T? else E
+
+	/// Whether `test` is true for any item.
+	fn containsMatch<E: Error>(test: fn(T) -> Bool else E) -> Bool else E
+
+	/// Whether `test` is false for every item.
+	fn doesNotContainMatch<E: Error>(test: fn(T) -> Bool else E) -> Bool else E
+
+	/// Whether `test` is true for every item. It is for an empty list, which has no item it's
+	/// false for.
+	///
+	/// ```
+	/// let allPaid = orders.allMatch(fn(order) => order.isPaid)
+	/// ```
+	fn allMatch<E: Error>(test: fn(T) -> Bool else E) -> Bool else E
+
+	/// The items as text, with `separator` between them: `["a", "b"].join(", ")` is `"a, b"`.
+	fn join(separator: String) -> String when T: Stringable
+
+	/// Whether the list holds an item equal to `item`.
+	fn contains(item: T) -> Bool when T: Equatable
+
+	/// Whether the list holds no item equal to `item`.
+	fn doesNotContain(item: T) -> Bool when T: Equatable
+
+	/// The total of the items; zero for an empty list.
+	fn sum() -> T when T: Numeric
+
+	/// The items in ascending order. Equal items keep their order.
+	fn sorted() -> List<T> when T: Comparable
+
+	/// The items in order of the value `key` gives for each, ascending unless `descending`
+	/// is true. Equal items keep their order.
+	///
+	/// ```
+	/// let biggest = files.sortedBy(fn(file) => file.size, descending: true)
+	/// ```
+	fn sortedBy<K: Comparable>(key: fn(T) -> K, named descending: Bool = false) -> List<T>
+
+	/// The items in the opposite order.
+	fn reversed() -> List<T>
+
+	/// The items in lists, one for each value `key` gives, in the order each value first
+	/// appears. Each list keeps the items' order.
+	///
+	/// ```
+	/// let byCountry = orders.groupBy(fn(order) => order.country)
+	/// ```
+	fn groupBy<K: Hashable>(key: fn(T) -> K) -> Map<K, List<T>>
+
+	/// The items with repeats left out, keeping the first of each.
+	fn distinct() -> List<T> when T: Hashable
+
+	/// Each item paired with the item at the same position in `other`. Panics if the two
+	/// lists have different lengths, since the extra items would otherwise be lost without
+	/// a word. To pair only as many as the shorter has, `take` that many from each first.
+	///
+	/// ```
+	/// let pairs = ["id", "name"].zip(["7", "Ann"])  // [("id", "7"), ("name", "Ann")]
+	/// ```
+	fn zip<U>(other: List<U>) -> List<(T, U)>
+
+	/// The smallest item, or `null` if the list is empty.
+	fn min() -> T? when T: Comparable
+
+	/// The largest item, or `null` if the list is empty.
+	fn max() -> T? when T: Comparable
+}
+
+/// Keys mapped to values, written `["a": 1, "b": 2]` (`[:]` when empty). Keeps the order in
+/// which keys were first added.
+pub record Map<K: Hashable, V> implements Emptiable, Iterable<(K, V)> {
+	/// The number of entries.
+	get length: Int
+
+	override get isEmpty: Bool
+
+	/// The keys, in order.
+	get keys: List<K>
+
+	/// The values, in the order of their keys.
+	get values: List<V>
+
+	/// The value for `key`, or `null` if there isn't one.
+	fn get(key: K) -> V?
+
+	/// Whether there is a value for `key`.
+	fn containsKey(key: K) -> Bool
+
+	/// Whether there is no value for `key`.
+	fn doesNotContainKey(key: K) -> Bool
+
+	/// Sets the value for `key`, replacing any value it had.
+	mut fn set(key: K, value: V)
+
+	/// Removes `key` and its value, if present.
+	mut fn remove(key: K)
+}
+
+/// Values with no duplicates. Keeps the order in which they were first added.
+pub record Set<T: Hashable> implements Emptiable, Iterable<T> {
+	/// The number of values.
+	get length: Int
+
+	override get isEmpty: Bool
+
+	/// Whether `item` is in the set.
+	fn contains(item: T) -> Bool
+
+	/// Whether `item` is not in the set.
+	fn doesNotContain(item: T) -> Bool
+
+	/// Adds `item`, if it isn't already there.
+	mut fn add(item: T)
+
+	/// Removes `item`, if present.
+	mut fn remove(item: T)
+}
+
+// ---------------------------------------------------------------------------------------
+// Functions
+
+/// Writes a line of text to standard output. For scripts; structured output goes through
+/// `std.log`.
+pub fn print(text: String)
+
+/// Stops the program with `message`, for a state that would be a bug. Only tests and the
+/// host can catch a panic.
+pub fn panic(message: String, @callerLocation loc: SourceLocation) -> Never
+
+/// Panics if `condition` is false.
+pub fn assert(condition: Bool, @callerLocation loc: SourceLocation)
+
+/// Panics with `message` if `condition` is false.
+pub fn assert(condition: Bool, message: String, @callerLocation loc: SourceLocation)
+
+/// Stands in for code not written yet, and panics if reached. A development build runs;
+/// a release build refuses to compile while any remain.
+///
+/// ```
+/// fn refund(order: Order) else PaymentError {
+/// 	todo("refunds go through the payment provider")
+/// }
+/// ```
+pub fn todo(reason: String, @callerLocation loc: SourceLocation) -> Never
+
+/// Whether `a` and `b` are the same object, not just equal.
+pub fn sameInstance<T>(a: T, b: T) -> Bool
+
+/// Fails the test unless calling `action` panics. Only test files can use it.
+pub fn expectPanic<T, E: Error>(action: fn() -> T else E, @callerLocation loc: SourceLocation)
+
+// ---------------------------------------------------------------------------------------
+// Attributes the compiler checks
+
+/// The function does no I/O, changes no object, and calls only pure functions. A compile
+/// error if that isn't true.
+pub attribute pure {}
+
+/// The function opens something, such as a file, that stays open until the unit of work
+/// ends or its `close()` is called. Calling it in a loop without closing what it opened is a
+/// warning, because a long loop could run out of open files.
+pub attribute opens {}
+
+/// Marks a `SourceLocation` parameter that the compiler fills in with the caller's
+/// location. A caller passes one explicitly by name (`loc: …`), to report its own caller.
+pub attribute callerLocation {}
+
+/// Using this declaration is a warning that names the version it was deprecated in and
+/// what to use instead.
+///
+/// ```
+/// @deprecated(since: "1.4", use: "orders.place")
+/// pub fn submit(order: Order) -> Receipt else OrderError {
+/// 	return orders.place(order)
+/// }
+/// ```
+pub attribute deprecated {
+	since: String
+	use: String? = null
+}
+
+/// The value is a secret, such as a password or an API key, and the type implements
+/// `Sensitive`. It is kept out of logs, panic reports and debug output, and forms never
+/// echo it back. A distinct type marked `@sensitive` doesn't convert to its base type and
+/// has none of its members; its text is `revealed`.
+pub attribute sensitive implements Sensitive {}
+
+/// A secret, such as a password or an API key. Mark a type `@sensitive` to implement it.
+///
+/// A secret isn't `Stringable`, is compared with `==` in the same time wherever two differ,
+/// and shows as `[redacted]` in logs. Functions that use a secret
+/// take a `Sensitive`, so the app passes it on without reading it:
+///
+/// ```
+/// let hash = passwords.hash(password)
+/// let api = env.http.client(base: config.paymentsApi, authorization: secret"Bearer ${apiKey}")
+/// ```
+///
+/// A `secret"…"` literal builds a new `Secret` from secrets and other text, so a secret stays
+/// one when it is put inside other text.
+///
+/// Two secrets compared with `==` take the same time wherever they differ, so the time taken
+/// doesn't reveal how much of a guess was right.
+pub interface Sensitive {
+	/// The secret as text. Read it only where it is handed over to something that needs the
+	/// text and takes only a `String`, such as another library. It can't go straight into a
+	/// log or a plain string.
+	get revealed: String
+
+	/// Whether `other` holds the same text, as a password and its confirmation should. It
+	/// takes the same time wherever the two differ, so the time doesn't show how much of a
+	/// guess was right. Two secrets of one type can use `==`, which does the same.
+	fn matches(other: Sensitive) -> Bool
+}
+
+/// A secret read from configuration, such as an API key or a password, or built with a
+/// `secret"…"` literal. It is kept out of logs, panic reports and debug output, and it isn't
+/// a `String`, so it can't end up in one by accident.
+///
+/// `T` is what the secret holds, text unless it says otherwise. `secret url"…"` builds a
+/// `Secret<Url>`, or a `Secret<RelativeUrl>` when the literal has no scheme, as `url"…"`
+/// does, and `secret html"…"` builds a `Secret<Html>`. Their interpolations follow
+/// the rules of a `url"…"` or `html"…"` literal and may also be secrets:
+///
+/// ```
+/// let button = secret html"<a href=\"${link}\">Confirm your email</a>"
+/// ```
+@sensitive
+pub record Secret<T = String> {
+	/// The secret's text: for a `Secret<Url>` the URL, for a `Secret<Html>` the markup.
+	override get revealed: String
+}

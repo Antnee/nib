@@ -1,0 +1,76 @@
+import std.http.{@guard, Request, Response, SessionKey, Status, ToResponse}
+import std.locale.{Locale}
+import shop.ui.{PageContext}
+import shop.users.{User, UserId, UserRepository}
+
+// What the session holds. Each key's type is fixed here, so every read and write agrees.
+const SIGNED_IN_USER = SessionKey<UserId>("userId")
+const SESSION_VERSION = SessionKey<Int>("sessionVersion")
+const NOTICE = SessionKey<String>("notice")
+
+/// What a handler or guard passes on with `try`: a guard's `SignInRequired`, or a failure the
+/// visitor can do nothing about, which is a 500. Anything a page should answer, such as an
+/// expired link or a cart that isn't theirs, the handler deals with where it happens, so a
+/// `try` never turns it into an error page.
+enum WebError implements ToResponse {
+	SignInRequired
+	Failed(from Error)
+
+	override fn toResponse() -> Response {
+		return match this {
+			WebError.SignInRequired => Response.redirect(url"/sign-in")
+			// The router has logged the error and its causes. RFC 9457 problem details for
+			// JSON clients, a plain error page for browsers; both carry only the request ID.
+			WebError.Failed => Response.problem(status: Status.INTERNAL_SERVER_ERROR)
+		}
+	}
+}
+
+/// What every page needs: the signed-in user, the CSRF token and any flash notice. The route
+/// table runs these as guards, so a page's handler receives its context as a `@guard`
+/// parameter.
+class Pages {
+	construct(private identity: Identity, private locale: Locale) {}
+
+	fn context(req: Request) -> PageContext else WebError {
+		return PageContext(
+			user: try this.identity.userIfSignedIn(req),
+			csrf: req.csrf,
+			notice: req.session.takeFlash(NOTICE),
+			locale: this.locale,
+		)
+	}
+
+	/// For pages that need someone signed in. It runs inside `context`, so it takes the user
+	/// the context has already loaded. Fails with `SignInRequired`, which sends the visitor to
+	/// the sign-in page.
+	fn signedIn(@guard page: PageContext) -> User else WebError {
+		return page.user ?? fail WebError.SignInRequired
+	}
+}
+
+/// Who is signed in. The session holds only the user's ID and session version, and the user
+/// is loaded on each request, so a deleted account, or a session from before a password
+/// reset, stops working at once.
+class Identity {
+	construct(private users: UserRepository) {}
+
+	/// For routes that need someone signed in but aren't pages, such as a download. Fails with
+	/// `SignInRequired`, which sends the visitor to the sign-in page.
+	fn user(req: Request) -> User else WebError {
+		return try this.userIfSignedIn(req) ?? fail WebError.SignInRequired
+	}
+
+	/// For pages that work either way.
+	fn userIfSignedIn(req: Request) -> User? else WebError {
+		let id = req.session.get(SIGNED_IN_USER) ?? return null
+		let user = try this.users.find(id)
+		if user is not null and req.session.get(SESSION_VERSION) == user.sessionVersion {
+			return user
+		}
+		// Deleted, or signed in before the password was reset.
+		req.session.remove(SIGNED_IN_USER)
+		req.session.remove(SESSION_VERSION)
+		return null
+	}
+}

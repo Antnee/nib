@@ -1,0 +1,4 @@
+// expect: error: nested conditional expressions need parentheses
+fn sign(n: Int) -> Int {
+	return n > 0 ? 1 : n < 0 ? -1 : 0
+}

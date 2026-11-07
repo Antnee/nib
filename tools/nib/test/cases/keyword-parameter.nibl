@@ -1,0 +1,4 @@
+// expect: error: `use` is a reserved word and can't be used as a parameter name
+fn deprecate(since: String, use: String) -> String {
+	return since
+}

@@ -1,0 +1,17 @@
+// expect: only error: `--` is a statement, not an expression
+// A mistake inside a body loses only that statement: `count` is still declared, so the
+// call to it below isn't reported as an unknown name.
+fn count(items: List<Int>) -> Int {
+	var total = 0
+	for item in items {
+		match item {
+			0 => total-- 1
+			_ => total++
+		}
+	}
+	return total
+}
+
+pub fn main() {
+	print("${count([1, 2])}")
+}

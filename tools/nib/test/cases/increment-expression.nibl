@@ -1,0 +1,5 @@
+// expect: error: is a statement, not an expression
+fn f() {
+	var i = 0
+	let j = i++ + 1
+}

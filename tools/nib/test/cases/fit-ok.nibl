@@ -1,0 +1,105 @@
+// expect: ok
+// Valid code where values meet the types their positions want.
+import std.codec.{Codable}
+import std.json.{@json}
+import std.codec.{JsonCodec}
+
+type Email: String
+type Cents: Int implements Numeric
+
+interface Shape {
+	get area: Decimal
+}
+
+record Square implements Shape {
+	side: Decimal
+
+	override get area: Decimal => this.side
+}
+
+enum Size {
+	Small
+	Large(label: String)
+}
+
+@json
+record Summary {
+	count: Int
+}
+
+record Page<T> {
+	items: List<T>
+	total: Int
+}
+
+enum Problem implements Error {
+	Empty
+
+	override get message: String => "nothing to do"
+}
+
+fn describe(shape: Shape) -> String {
+	return "shape"
+}
+
+fn send<T: Codable<JsonCodec>>(value: T) {}
+
+fn first<T>(items: List<T>) -> T? {
+	return null
+}
+
+fn handle(f: fn(Square) -> String) {}
+
+fn general(shape: Shape) -> String {
+	return "general"
+}
+
+fn ratio() -> Float {
+	return 0.5
+}
+
+fn stop(reason: String) -> Int {
+	return panic(reason)
+}
+
+fn check(n: Int) -> Int else Problem {
+	if n < 0 {
+		fail Problem.Empty
+	}
+	return n
+}
+
+fn run(email: Email, price: Decimal, square: Square, cents: Cents, summaries: List<Summary>) -> Int else Problem {
+	let plain: String = email
+	let maybe: String? = plain
+	let missing: Email? = null
+	let small: UInt8 = 255
+	let below: Int8 = -128
+	let rates: List<Decimal> = [0.2, 1, 2.5]
+	let weights: Map<String, Float> = ["a": 0.5, "b": 2]
+	let pair: (Int, Decimal) = (1, 2.5)
+	let doubled: Decimal = 2 * 3
+	let shapes: List<Shape> = [square]
+	let picked: Decimal = price > 10 ? 1 : 0.5
+	let cost: Int = cents + 1
+	var total: Decimal = 0
+	total += price
+	total = total + 1
+	let _ = describe(square)
+	handle(general)
+	send(Summary(count: 2))
+	send(summaries)
+	send([1, 2, 3])
+	send(["a": [true]])
+	let page = Page(items: [square], total: 1)
+	let side: Decimal = page.items[0].side
+	let found: Square? = first([square])
+	let keys: Map<(Int, Int), String> = [:]
+	let sizes: Map<Size, Int> = [:]
+	let label: String = match Size.Small {
+		Size.Small => "small"
+		Size.Large(label:) => label
+	}
+	let checked: Int = try check(3)
+	return checked + small.toInt()
+}

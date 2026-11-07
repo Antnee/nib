@@ -1,0 +1,18 @@
+// expect: ok
+// A `@form` record's `fields` names each of its fields, for pages and handlers.
+import std.forms.{@form, FormField, FormState}
+
+@form
+record SignInForm {
+	email: String
+	remember: Bool = false
+}
+
+fn input(state: FormState, field: FormField) -> String {
+	return "<input name=\"${field.name}\" value=\"${state.values.get(field) ?? ""}\">"
+}
+
+fn page(state: FormState) -> String {
+	let shown = state.explaining(SignInForm.fields.email, text: "Check the address.")
+	return "${input(shown, SignInForm.fields.email)}${input(shown, SignInForm.fields.remember)}"
+}

@@ -1,0 +1,7 @@
+// expect: only error: `SIGN_INS` has the name "sign-in", which `SIGN_UPS` already has
+import std.cache.{Limit}
+import std.http.{IpAddress}
+import std.time.{Duration}
+
+const SIGN_UPS = Limit<IpAddress>(name: "sign-in", max: 10, per: Duration.of(hours: 1))
+const SIGN_INS = Limit<IpAddress>(name: "sign-in", max: 5, per: Duration.of(minutes: 1))

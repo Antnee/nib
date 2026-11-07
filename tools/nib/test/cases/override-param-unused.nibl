@@ -1,0 +1,14 @@
+// expect: ok
+interface Greeter {
+	fn greet(name: String, named loudly: Bool) -> String
+}
+
+record Quiet implements Greeter {
+	override fn greet(name: String, named _: Bool) -> String {
+		return "hello ${name}"
+	}
+}
+
+fn greeting(quiet: Quiet) -> String {
+	return quiet.greet("Ann", loudly: true)
+}

@@ -1,0 +1,27 @@
+// expect: warning: nothing uses this `Outcome`
+enum Outcome {
+	Done
+	Expired
+}
+
+enum UseError implements Error {
+	Unreachable
+
+	override get message: String => "unreachable"
+}
+
+fn redeem(code: String) -> Outcome else UseError {
+	return code.isEmpty ? Outcome.Expired : Outcome.Done
+}
+
+fn run(code: String) -> Void else UseError {
+	try redeem(code)
+	let _ = try redeem(code)
+}
+
+fn note(code: String) {
+	// Dropped on purpose, so the block may simply end.
+	let _ = redeem(code) catch err {
+		print(err.message)
+	}
+}

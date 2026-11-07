@@ -1,0 +1,12 @@
+// expect: ok
+import std.locale.{Locale}
+import std.time.{Clock, DateStyle, Instant, Period, Time, TimeStyle, TimeZone}
+
+fn tomorrowAtNine(clock: Clock, zone: TimeZone) -> Instant {
+	let tomorrow = clock.now().in(zone).date.plus(Period.of(days: 1))
+	return tomorrow.at(Time.of(hour: 9), zone).instant
+}
+
+fn shown(at: Instant, zone: TimeZone, locale: Locale) -> String {
+	return at.in(zone).formatted(date: DateStyle.Medium, time: TimeStyle.Short, locale:)
+}

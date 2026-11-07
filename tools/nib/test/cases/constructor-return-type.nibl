@@ -1,0 +1,4 @@
+// expect: error: a constructor builds the class it belongs to, so it has no return type
+class Greeter {
+	construct(private greeting: String) -> Greeter {}
+}

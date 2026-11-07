@@ -1,0 +1,14 @@
+// expect: error: `secret` is private to `Vault`, so only its own code can use it
+class Vault {
+	construct() {
+		return Vault()
+	}
+
+	private fn secret() -> Int {
+		return 42
+	}
+}
+
+fn open() -> Int {
+	return new Vault().secret()
+}

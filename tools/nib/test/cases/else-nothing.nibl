@@ -1,0 +1,11 @@
+// expect: error: nothing before this `catch` can fail, so it has no error to handle
+fn double(n: Int) -> Int {
+	return n * 2
+}
+
+fn run() -> Int {
+	let n = double(2) catch {
+		return 0
+	}
+	return n
+}

@@ -1,0 +1,22 @@
+/// A piece of HTML whose interpolated values have already been escaped. An `html"…"`
+/// literal produces one: each `${…}` is escaped for where it lands (text, a quoted attribute,
+/// a URL attribute, or the inside of `<script>` and `<style>`), and an `Html` or `List<Html>`
+/// value is inserted as it is. Interpolating where no safe context exists, such as a tag
+/// name or an unquoted attribute, is a compile error.
+///
+/// A component is a function that returns `Html`; an `Html` parameter is a slot.
+///
+/// ```
+/// fn greeting(name: String) -> Html {
+/// 	return html"<p>Hello, ${name}!</p>"
+/// }
+/// ```
+pub record Html {
+	/// No HTML, as for a part of a page that has nothing to show:
+	/// `problem is null ? Html.EMPTY : html"<p>…</p>"`. It's the only way to write it, so an
+	/// empty `html""` is an error.
+	const EMPTY: Html
+
+	/// The HTML as text, ready to send or to put in an email.
+	fn render() -> String
+}

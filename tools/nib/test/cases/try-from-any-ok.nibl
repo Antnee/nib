@@ -1,0 +1,37 @@
+// expect: ok
+import std.app.{Env}
+
+enum LoadError implements Error {
+	Missing
+
+	override get message: String => "load failed"
+}
+
+enum SaveError implements Error {
+	Full
+
+	override get message: String => "save failed"
+}
+
+enum RunError implements Error {
+	Load(from LoadError)
+	Failed(from Error)
+
+	override get message: String => match this {
+		RunError.Load => "loading failed"
+		RunError.Failed => "running failed"
+	}
+}
+
+fn load() -> String else LoadError {
+	fail LoadError.Missing
+}
+
+fn save(text: String) else SaveError {
+	fail SaveError.Full
+}
+
+pub fn main(env: Env) else RunError {
+	let text = try load()
+	try save(text)
+}

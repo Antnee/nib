@@ -1,0 +1,249 @@
+#!/usr/bin/env nib
+
+// Converts between CSV and JSON. It reads a file, or standard input when no file is given,
+// and writes standard output, so it works in a pipe:
+//
+//   nib run examples/convert/convert.nibl to-json orders.csv
+//   cat orders.json | nib run examples/convert/convert.nibl to-csv
+//
+// CSV becomes one JSON object per line (NDJSON), keyed by the header row. With `--array`,
+// it becomes one JSON array instead. JSON becomes CSV when it's an array of flat objects or
+// one object per line, and the first object's keys are the columns.
+//
+// Rows are read and written one at a time, so a file of any size fits in memory.
+
+import std.app.{Env}
+import std.csv with {CsvError}
+import std.files.{FileError, PathError}
+import std.io.{IoError, Writer}
+import std.json with {JsonError, JsonEvent}
+
+pub fn main(env: Env) -> Int else IoError {
+	let options = parseOptions(env.args) catch err {
+		let problem = match err {
+			UsageError.NoDirection => "Say which way to convert."
+			UsageError.Unknown(argument:) => "There's no option called ${argument}."
+			UsageError.TooManyFiles => "Give at most one file."
+			UsageError.ArrayOnlyForJson => "--array only applies to to-json."
+		}
+		try env.stderr.writeLine("${problem}\nUsage: convert to-json|to-csv [--array] [FILE]")
+		return 2
+	}
+	convert(env, options) catch err {
+		try env.stderr.writeLine(explain(err))
+		return 1
+	}
+	return 0
+}
+
+fn convert(env: Env, options: Options) else ConvertError {
+	let input: Iterable<Bytes, IoError>
+	match options.file {
+		null => input = env.stdin
+		name => {
+			let dir = try env.workingDir()
+			input = try dir.open(try dir.resolveWithin(name))
+		}
+	}
+
+	let out = env.stdout
+	match options.direction {
+		Direction.ToJson => try writeJson(csv.decodingRows(input), out, array: options.array)
+		Direction.ToCsv => try writeCsv(flatObjects(json.events(input)), out)
+	}
+}
+
+/// What went wrong, for the person running the program.
+fn explain(err: ConvertError) -> String {
+	return match err {
+		ConvertError.Files(FileError.NotFound(path:)) => "There's no file called ${path}."
+		ConvertError.Files or ConvertError.BadPath => "That file can't be read from here."
+		ConvertError.Io => "Reading the input or writing the output failed partway."
+		ConvertError.Csv(CsvError.Malformed(line:)) or ConvertError.Csv(CsvError.Field(line:)) =>
+			"The CSV isn't valid on line ${line}."
+		ConvertError.Csv(CsvError.Io) => "Reading the CSV failed partway."
+		ConvertError.Json(JsonError.Malformed(line:, column:)) =>
+			"The JSON isn't valid at line ${line}, column ${column}."
+		ConvertError.Json => "The JSON couldn't be read."
+		ConvertError.RaggedRow(row:, expected:, found:) =>
+			"Row ${row} has ${found} fields, but the header has ${expected}."
+		ConvertError.NotObjects => "Only an array of objects, or objects one after another, can become CSV."
+		ConvertError.NotFlat(key:) => "Only flat objects of plain values can become CSV, and \"${key}\" holds more."
+		ConvertError.NewColumn(key:) => "\"${key}\" isn't in the first object, so it has no column."
+	}
+}
+
+enum Direction {
+	ToJson
+	ToCsv
+}
+
+record Options {
+	direction: Direction
+	array: Bool
+	file: String?
+}
+
+/// Reads the command line. The first argument is the program's own name.
+fn parseOptions(args: List<String>) -> Options else UsageError {
+	let direction = match args.get(1) {
+		"to-json" => Direction.ToJson
+		"to-csv" => Direction.ToCsv
+		null => fail UsageError.NoDirection
+		other => fail UsageError.Unknown(argument: other)
+	}
+	var array = false
+	var file: String? = null
+	for i in 2..<args.length {
+		let arg = args[i]
+		if arg == "--array" {
+			array = true
+		} else if arg.startsWith("--") {
+			fail UsageError.Unknown(argument: arg)
+		} else if file is not null {
+			fail UsageError.TooManyFiles
+		} else {
+			file = arg
+		}
+	}
+	if array and direction == Direction.ToCsv {
+		fail UsageError.ArrayOnlyForJson
+	}
+	return Options(direction:, array:, file:)
+}
+
+/// Writes each CSV row after the header as a JSON object keyed by the header's names.
+fn writeJson(rows: Iterable<List<String>, CsvError>, out: Writer, named array: Bool) else ConvertError {
+	var header: List<String>? = null
+	var rowNumber = 0
+	var written = 0
+	if array {
+		try out.write("[".toBytes())
+	}
+	for row in try rows {
+		rowNumber++
+		let names = header ?? {
+			header = row
+			continue
+		}
+		if row.length != names.length {
+			fail ConvertError.RaggedRow(row: rowNumber, expected: names.length, found: row.length)
+		}
+		var object: Map<String, String> = [:]
+		for (name, value) in names.zip(row) {
+			object.set(name, value)
+		}
+		if array {
+			try out.write((written == 0 ? "\n  " : ",\n  ").toBytes())
+		}
+		try out.write(json.encode(object))
+		if not array {
+			try out.write("\n".toBytes())
+		}
+		written++
+	}
+	if array {
+		try out.write((written == 0 ? "]\n" : "\n]\n").toBytes())
+	}
+}
+
+/// Writes objects as CSV: the first object's keys are the header row.
+fn writeCsv(objects: Iterable<Map<String, String>, ConvertError>, out: Writer) else ConvertError {
+	for chunk in try csv.encodingRows(table(objects)) {
+		try out.write(chunk)
+	}
+}
+
+/// The rows of a table: the first object's keys, then each object's values in that order. A
+/// key the first object didn't have stops it, since it has no column.
+fn table(objects: Iterable<Map<String, String>, ConvertError>) -> Iterable<List<String>, ConvertError> {
+	var columns: List<String> = []
+	// The first object gives the header, even when it's `{}` and has no keys.
+	var hasHeader = false
+	for object in try objects {
+		if not hasHeader {
+			columns = object.keys
+			hasHeader = true
+			yield columns
+		}
+		for key in object.keys {
+			if columns.doesNotContain(key) {
+				fail ConvertError.NewColumn(key:)
+			}
+		}
+		yield columns.map(fn(column) => object.get(column) ?? "")
+	}
+}
+
+/// The flat objects in a stream of JSON: the items of one array, or objects one after
+/// another. Each value becomes text, and `null` becomes empty.
+fn flatObjects(events: Iterable<JsonEvent, JsonError>) -> Iterable<Map<String, String>, ConvertError> {
+	// Inside a top-level array, objects start one level down.
+	var outer = 0
+	var depth = 0
+	var object: Map<String, String> = [:]
+	var key = ""
+	for event in try events {
+		let inObject = depth == outer + 1
+		match event {
+			JsonEvent.StartArray if depth == 0 => {
+				outer = 1
+				depth++
+			}
+			JsonEvent.EndArray if depth == 1 => depth--
+			JsonEvent.StartObject if depth == outer => {
+				object = [:]
+				depth++
+			}
+			JsonEvent.EndObject if inObject => {
+				depth--
+				yield object
+			}
+			JsonEvent.Key(name:) if inObject => key = name
+			JsonEvent.Text(value:) if inObject => object.set(key, value)
+			JsonEvent.Number(value:) if inObject => object.set(key, "${value}")
+			JsonEvent.Boolean(value:) if inObject => object.set(key, value ? "true" : "false")
+			JsonEvent.Null if inObject => object.set(key, "")
+			_ if not inObject => fail ConvertError.NotObjects
+			_ => fail ConvertError.NotFlat(key:)
+		}
+	}
+}
+
+/// A command line this program doesn't understand.
+enum UsageError implements Error {
+	NoDirection
+	Unknown(argument: String)
+	TooManyFiles
+	ArrayOnlyForJson
+
+	override get message: String => match this {
+		UsageError.NoDirection => "no direction given"
+		UsageError.Unknown(argument:) => "unknown argument ${argument}"
+		UsageError.TooManyFiles => "more than one file given"
+		UsageError.ArrayOnlyForJson => "--array given with to-csv"
+	}
+}
+
+enum ConvertError implements Error {
+	Files(from FileError)
+	BadPath(from PathError)
+	Io(from IoError)
+	Csv(from CsvError)
+	Json(from JsonError)
+	RaggedRow(row: Int, expected: Int, found: Int)
+	NotObjects
+	NotFlat(key: String)
+	NewColumn(key: String)
+
+	override get message: String => match this {
+		ConvertError.Files or ConvertError.BadPath => "couldn't open the input"
+		ConvertError.Io => "couldn't read the input or write the output"
+		ConvertError.Csv => "couldn't read the input as CSV"
+		ConvertError.Json => "couldn't read the input as JSON"
+		ConvertError.RaggedRow(row:) => "row ${row} has a different number of fields from the header"
+		ConvertError.NotObjects => "the input isn't an array of objects, or objects one after another"
+		ConvertError.NotFlat(key:) => "the value of ${key} is nested"
+		ConvertError.NewColumn(key:) => "${key} isn't one of the first object's keys"
+	}
+}

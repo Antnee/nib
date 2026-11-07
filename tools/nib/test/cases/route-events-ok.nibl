@@ -1,0 +1,50 @@
+// expect: ok
+// An events route's handler takes the sink after the request, and a WebSocket's the socket.
+// A handler that doesn't read the request leaves it out.
+import std.http.{@guard, @path, EventSink, Request, Route, Routes, WebSocket}
+import std.time.{Duration}
+
+type OrderId: Int
+
+record User {
+	name: String
+}
+
+class Guards {
+	fn user(req: Request) -> User {
+		return User(name: "Ann")
+	}
+}
+
+class Live {
+	fn status(req: Request, events: EventSink, @guard user: User, @path orderId: OrderId) {
+		// A failed send means the browser has gone, so the stream just ends.
+		events.send(text: "order ${orderId} for ${user.name}", event: "status") catch _ {
+			return
+		}
+	}
+
+	fn chat(socket: WebSocket, @path roomId: String) {
+		let message = socket.receive() catch _ {
+			return
+		}
+		if message is not null {
+			socket.send(text: "welcome to ${roomId}") catch _ {
+				return
+			}
+		}
+	}
+}
+
+class Services {
+	construct(pub guards: Guards, pub live: Live) {}
+}
+
+fn routes() -> Routes<Services> {
+	return Routes(routes: [
+		Route.group(requiring: fn(app) => app.guards.user, routes: [
+			Route.events("/orders/{orderId}/status", fn(app) => app.live.status, timeout: Duration.of(hours: 1)),
+		]),
+		Route.websocket("/rooms/{roomId}", fn(app) => app.live.chat, timeout: Duration.of(hours: 1)),
+	])
+}

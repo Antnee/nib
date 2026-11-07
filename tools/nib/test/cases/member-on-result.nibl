@@ -1,0 +1,4 @@
+// expect: error: the call before it can fail, so put `try` in front
+fn count(text: String) -> Int {
+	return Int.parse(text).formatted().length
+}

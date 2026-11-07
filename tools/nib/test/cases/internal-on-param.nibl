@@ -1,0 +1,4 @@
+// expect: error: only a class's constructor declares fields with its parameters, so `internal` doesn't belong on a parameter
+fn greet(internal name: String) -> String {
+	return name
+}

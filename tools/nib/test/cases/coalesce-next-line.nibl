@@ -1,0 +1,11 @@
+// expect: ok
+// A line that starts with `??` continues the one before.
+fn find(id: Int) -> String? {
+	return id > 0 ? "ann" : null
+}
+
+fn name(id: Int) -> String {
+	let found = find(id)
+		?? return "nobody"
+	return found
+}

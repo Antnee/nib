@@ -1,0 +1,10 @@
+// expect: error: `times` in `Repeater.say` is `named`, so it is here too
+interface Repeater {
+	fn say(text: String, named times: Int) -> String
+}
+
+record Echo implements Repeater {
+	override fn say(text: String, times: Int) -> String {
+		return text.repeat(times)
+	}
+}

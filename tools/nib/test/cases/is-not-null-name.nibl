@@ -1,0 +1,11 @@
+// expect: error: `is not null` doesn't name the value: put it in a `let` first, as `let name = …`, then test `name is not null`
+class Session {
+	var user: String? = null
+
+	fn welcome() -> String {
+		if this.user is not null name {
+			return "Welcome back, ${name}"
+		}
+		return "Welcome"
+	}
+}

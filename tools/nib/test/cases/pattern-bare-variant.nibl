@@ -1,0 +1,12 @@
+// expect: only error: write the variant with its enum's name, as `Outcome.Expired`, so the line says what it is
+enum Outcome {
+	Done
+	Expired
+}
+
+fn describe(outcome: Outcome) -> String {
+	if outcome is Expired {
+		return "expired"
+	}
+	return "done"
+}

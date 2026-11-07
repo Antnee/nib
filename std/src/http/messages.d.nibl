@@ -1,0 +1,345 @@
+import std.codec.{Codable, FormCodec, JsonCodec}
+import std.crypto.{Keyring}
+import std.forms.{FormError}
+import std.html.{Html}
+import std.io.{IoError, Writer}
+
+/// An incoming request. It is an immutable value: middleware that needs to change it passes
+/// a copy to the next step (`req.withHeader(…)`). The session is the exception, because it
+/// is a handle whose changes are saved when the response is sent.
+pub record Request {
+	/// The HTTP method.
+	get method: Method
+
+	/// The path, without the query string, such as `/checkout/42`.
+	get path: String
+
+	/// The query string's parameters.
+	get query: Query
+
+	/// The request's headers.
+	get headers: Headers
+
+	/// The cookies the client sent.
+	get cookies: Cookies
+
+	/// For an events route, the `id` of the last event the browser received, which it sends
+	/// when it reconnects, so the handler can carry on from there. `null` on a first
+	/// connection, and on any other route.
+	get lastEventId: String?
+
+	/// The client's address, resolved through the proxies the app lists as trusted. It is
+	/// never read raw from `X-Forwarded-For`, which any client can set.
+	get clientIp: IpAddress
+
+	/// The body, buffered up to the route's size limit, so it can be read more than once.
+	get body: Body
+
+	/// The visitor's session.
+	get session: Session
+
+	/// The CSRF token to put in this request's forms. The router rejects an unsafe request
+	/// (POST, PUT, PATCH, DELETE) that doesn't send it back, unless the route opts out.
+	get csrf: CsrfToken
+
+	/// A copy of the request with the header `name` set to `value`, replacing any earlier
+	/// values.
+	fn withHeader(name: String, value: String) -> Request
+
+	/// A copy of the request with the header `name` set to a secret, such as an
+	/// `Authorization` header, which is kept out of logs.
+	fn withHeader(name: String, named secret: Sensitive) -> Request
+}
+
+/// An HTTP method.
+pub enum Method: String {
+	Get = "GET"
+	Head = "HEAD"
+	Post = "POST"
+	Put = "PUT"
+	Patch = "PATCH"
+	Delete = "DELETE"
+	Options = "OPTIONS"
+}
+
+/// Headers, whose names are compared without regard to case. A header may appear more than
+/// once.
+pub record Headers {
+	/// The first value of the header `name`, or `null` if it is absent.
+	fn get(name: String) -> String?
+
+	/// Every value of the header `name`, in the order received.
+	fn all(name: String) -> List<String>
+}
+
+/// A query string's parameters. A parameter may appear more than once.
+pub record Query {
+	/// The first value of `name`, or `null` if it is absent.
+	fn get(name: String) -> String?
+
+	/// Every value of `name`, in order.
+	fn all(name: String) -> List<String>
+
+	/// Builds a `@form` record from the parameters, as a GET form submits them. Fails with a
+	/// `FormError`, whose `state` holds the submitted values and the problem with each field
+	/// that didn't decode.
+	fn form<T: Codable<FormCodec>>() -> T else FormError
+}
+
+/// The cookies a client sent.
+pub record Cookies {
+	/// The value of the cookie `name`, or `null` if the client didn't send it.
+	fn get(name: String) -> String?
+
+	/// The value of a cookie made with `Cookie.signed`, or `null` if the client didn't send
+	/// it or it has been changed. Any key in `keyring` is accepted, so rotating keys doesn't
+	/// sign everyone out.
+	fn verified(name: String, named keyring: Keyring) -> String?
+
+	/// The value of a cookie made with `Cookie.encrypted`, or `null` if the client didn't send
+	/// it or it has been changed. Any key in `keyring` is accepted, so rotating keys doesn't
+	/// sign everyone out.
+	fn decrypted(name: String, named keyring: Keyring) -> String?
+}
+
+/// The body of a request or a response. It is read the same way on the server and in the
+/// client. A read fails with `BodyError.WrongContentType` when the body isn't of the kind
+/// asked for.
+pub record Body {
+	/// Builds a `@form` record from a form-encoded body. Fails with a `FormError`, whose
+	/// `state` holds the submitted values and the problem with each field that didn't decode,
+	/// ready to show the form again.
+	fn form<T: Codable<FormCodec>>() -> T else FormError
+
+	/// Decodes a JSON body into `T`, which must have a JSON codec (`@json`). Nesting deeper
+	/// than `depthLimit` levels fails with `BodyError.Malformed`, so a hostile body can't
+	/// exhaust the server.
+	///
+	/// ```
+	/// let quote = response.body.json<QuoteResponse>() catch err { fail unavailable(err) }
+	/// ```
+	fn json<T: Codable<JsonCodec>>(named depthLimit: Int = 128) -> T else BodyError
+
+	/// The body as text, decoded from its declared character set.
+	fn text() -> String else BodyError
+
+	/// The body as it arrived.
+	fn bytes() -> Bytes
+
+	/// The body a chunk at a time, as it arrives, for a large upload that shouldn't be held
+	/// in memory. It stops with `IoError.TooLarge` past the route's size limit.
+	fn stream() -> Iterable<Bytes, IoError>
+}
+
+/// Why a body couldn't be read.
+pub enum BodyError implements Error {
+	/// The body's content type isn't the one the read expects. If nothing handles it, the
+	/// response is `415 Unsupported Media Type`.
+	WrongContentType(expected: String, received: String?)
+	/// The body has the right content type but its contents don't decode.
+	Malformed(reason: String)
+
+	/// What went wrong, in plain words.
+	override get message: String
+}
+
+/// An IP address, version 4 or 6.
+pub record IpAddress implements Parseable, Stringable {
+	/// Reads an address such as `192.0.2.1` or `2001:db8::1`.
+	override static fn parse(text: String) -> IpAddress else ParseError
+
+	/// The address in its usual written form, such as `192.0.2.1`.
+	override fn toString() -> String
+}
+
+/// A response, to send from a handler or as returned by an HTTP call. It is an immutable
+/// value: the `with…` methods return a changed copy.
+///
+/// ```
+/// return Response.html(page, status: Status.UNPROCESSABLE_CONTENT)
+/// ```
+pub record Response {
+	/// An HTML page, `200 OK` unless `status` says otherwise, such as a form shown again
+	/// with its errors.
+	static fn html(page: Html, named status: Status = Status.OK) -> Response
+
+	/// A body written a chunk at a time, for a long download. The host calls `write`, and
+	/// sends the status and headers with the first chunk, so they're never sent for a body
+	/// that can't start. `out.write(…)` waits while the client is slow. The failure is logged
+	/// either way:
+	///
+	/// - If `write` fails before the first chunk, the response is a `500` problem response,
+	///   as for a handler that fails.
+	/// - If it fails after the first chunk, the connection is broken off, so the client sees
+	///   a failed download rather than a short one.
+	///
+	/// ```
+	/// return Response.stream(contentType: "text/csv", write: fn(out: BodyWriter) else ExportError {
+	/// 	for chunk in try csv.encoding(rows) {
+	/// 		try out.write(chunk)
+	/// 	}
+	/// })
+	/// ```
+	static fn stream<E: Error>(named contentType: String, named write: fn(BodyWriter) -> Void else E) -> Response
+
+	/// A JSON body, `200 OK` unless `status` says otherwise. `T` must have a JSON codec
+	/// (`@json`).
+	static fn json<T: Codable<JsonCodec>>(value: T, named status: Status = Status.OK) -> Response
+
+	/// A plain-text body, `200 OK` unless `status` says otherwise.
+	static fn text(text: String, named status: Status = Status.OK) -> Response
+
+	/// A `303 See Other` to a path on this site, so a redirect after a POST is followed with
+	/// a GET. A `RelativeUrl` has no host, so a `?next=` parameter read with
+	/// `RelativeUrl.parse` can't send a visitor to another site.
+	///
+	/// ```
+	/// return Response.redirect(url"/orders/${order.id}")
+	/// ```
+	static fn redirect(to: RelativeUrl) -> Response
+
+	/// A `303 See Other` to another site.
+	static fn redirectAway(to: Url) -> Response
+
+	/// An empty `204 No Content`.
+	static fn noContent() -> Response
+
+	/// A `400 Bad Request`: a plain error page for browsers, problem details for JSON
+	/// clients.
+	static fn badRequest() -> Response
+
+	/// A `404 Not Found`: a plain error page for browsers, problem details for JSON clients.
+	static fn notFound() -> Response
+
+	/// An RFC 9457 problem-details response for JSON clients, and a plain error page for
+	/// browsers. Both carry the request ID; internals are shown only in development. `title`
+	/// and `detail`, a short summary and a longer explanation, must be safe to show to the
+	/// client.
+	static fn problem(named status: Status, named title: String? = null, named detail: String? = null) -> Response
+
+	/// The status code.
+	get status: Status
+
+	/// The response's headers.
+	get headers: Headers
+
+	/// The body. On a response to an HTTP call, its size is capped.
+	get body: Body
+
+	/// A copy with the header `name` set to `value`, replacing any earlier values.
+	fn withHeader(name: String, value: String) -> Response
+
+	/// A copy that sets `cookie`, replacing one with the same name and path.
+	///
+	/// ```
+	/// return Response.redirect(url"/").withCookie(Cookie(name: "theme", value: "dark", httpOnly: false))
+	/// ```
+	fn withCookie(cookie: Cookie) -> Response
+
+	/// A copy that tells the browser to remove the cookie `name`. `path` must be the one it
+	/// was set with.
+	fn withCookieRemoved(name: String, named path: String = "/") -> Response
+
+	/// A copy that runs `work` after this response has been sent, and only if it is. It is
+	/// best effort, and not durable: use a queue for anything that matters. `work` can't fail,
+	/// so it handles its own errors.
+	///
+	/// The request's services stay alive until `work` has finished, so it can use what the
+	/// handler used, and its log events carry the request's ID. It has 10 seconds of its own,
+	/// counted from when the response is sent, and is cancelled when they pass, as a request
+	/// is at its deadline. A client that goes away after the response doesn't cancel it. When
+	/// the host shuts down, it stops taking requests and waits for this work before it exits.
+	///
+	/// ```
+	/// return Response.redirect(url"/").onSent(fn() {
+	/// 	analytics.track(event) catch err { log.warn("event not sent", fields: ["error": err]) }
+	/// })
+	/// ```
+	fn onSent(work: fn() -> Void) -> Response
+}
+
+/// Turns an error into the response the client sees. A handler or guard may fail with any
+/// error that implements it; the router calls `toResponse()`, and logs it as an `Error`.
+pub interface ToResponse implements Error {
+	/// The response to send in place of the handler's.
+	fn toResponse() -> Response
+}
+
+/// A status code. Every registered code has a named constant; a code with no name is
+/// written `Status(520)`.
+pub type Status: Int {
+	const CONTINUE: Status = Status(100)
+	const SWITCHING_PROTOCOLS: Status = Status(101)
+	const PROCESSING: Status = Status(102)
+	const EARLY_HINTS: Status = Status(103)
+
+	const OK: Status = Status(200)
+	const CREATED: Status = Status(201)
+	const ACCEPTED: Status = Status(202)
+	const NON_AUTHORITATIVE_INFORMATION: Status = Status(203)
+	const NO_CONTENT: Status = Status(204)
+	const RESET_CONTENT: Status = Status(205)
+	const PARTIAL_CONTENT: Status = Status(206)
+	const MULTI_STATUS: Status = Status(207)
+	const ALREADY_REPORTED: Status = Status(208)
+	const IM_USED: Status = Status(226)
+
+	const MULTIPLE_CHOICES: Status = Status(300)
+	const MOVED_PERMANENTLY: Status = Status(301)
+	const FOUND: Status = Status(302)
+	const SEE_OTHER: Status = Status(303)
+	const NOT_MODIFIED: Status = Status(304)
+	const USE_PROXY: Status = Status(305)
+	const TEMPORARY_REDIRECT: Status = Status(307)
+	const PERMANENT_REDIRECT: Status = Status(308)
+
+	const BAD_REQUEST: Status = Status(400)
+	const UNAUTHORIZED: Status = Status(401)
+	const PAYMENT_REQUIRED: Status = Status(402)
+	const FORBIDDEN: Status = Status(403)
+	const NOT_FOUND: Status = Status(404)
+	const METHOD_NOT_ALLOWED: Status = Status(405)
+	const NOT_ACCEPTABLE: Status = Status(406)
+	const PROXY_AUTHENTICATION_REQUIRED: Status = Status(407)
+	const REQUEST_TIMEOUT: Status = Status(408)
+	const CONFLICT: Status = Status(409)
+	const GONE: Status = Status(410)
+	const LENGTH_REQUIRED: Status = Status(411)
+	const PRECONDITION_FAILED: Status = Status(412)
+	const CONTENT_TOO_LARGE: Status = Status(413)
+	const URI_TOO_LONG: Status = Status(414)
+	const UNSUPPORTED_MEDIA_TYPE: Status = Status(415)
+	const RANGE_NOT_SATISFIABLE: Status = Status(416)
+	const EXPECTATION_FAILED: Status = Status(417)
+	const MISDIRECTED_REQUEST: Status = Status(421)
+	const UNPROCESSABLE_CONTENT: Status = Status(422)
+	const LOCKED: Status = Status(423)
+	const FAILED_DEPENDENCY: Status = Status(424)
+	const TOO_EARLY: Status = Status(425)
+	const UPGRADE_REQUIRED: Status = Status(426)
+	const PRECONDITION_REQUIRED: Status = Status(428)
+	const TOO_MANY_REQUESTS: Status = Status(429)
+	const REQUEST_HEADER_FIELDS_TOO_LARGE: Status = Status(431)
+	const UNAVAILABLE_FOR_LEGAL_REASONS: Status = Status(451)
+
+	const INTERNAL_SERVER_ERROR: Status = Status(500)
+	const NOT_IMPLEMENTED: Status = Status(501)
+	const BAD_GATEWAY: Status = Status(502)
+	const SERVICE_UNAVAILABLE: Status = Status(503)
+	const GATEWAY_TIMEOUT: Status = Status(504)
+	const HTTP_VERSION_NOT_SUPPORTED: Status = Status(505)
+	const VARIANT_ALSO_NEGOTIATES: Status = Status(506)
+	const INSUFFICIENT_STORAGE: Status = Status(507)
+	const LOOP_DETECTED: Status = Status(508)
+	const NETWORK_AUTHENTICATION_REQUIRED: Status = Status(511)
+
+	/// Whether the code is from 200 to 299.
+	get isSuccess: Bool
+
+	/// Whether the code is outside 200 to 299.
+	get isNotSuccess: Bool
+}
+
+/// Where a streamed response's body is written, from `Response.stream`. The host finishes
+/// the body when `write` returns; `close` ends it early.
+pub class BodyWriter implements Writer {}

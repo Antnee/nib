@@ -1,0 +1,20 @@
+// expect: ok
+import std.db.{DbError}
+import std.http.{Response, ToResponse}
+
+enum LoadError implements Error {
+	NotFound
+	Database(from DbError)
+}
+
+enum PageError implements ToResponse {
+	Gone
+
+	override fn toResponse() -> Response {
+		return Response.notFound()
+	}
+}
+
+fn describe(err: LoadError, page: PageError) -> String {
+	return "${err.message}, ${page.message}"
+}

@@ -1,0 +1,8 @@
+// expect: error: this is a `Password`, but `text` is declared as a `String`
+@sensitive
+type Password: private String
+
+fn leak(password: Password) -> String {
+	let text: String = password
+	return text
+}

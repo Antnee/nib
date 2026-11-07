@@ -1,0 +1,91 @@
+import std.codec.{Codable, JsonCodec}
+import std.time.{Duration}
+
+/// A cache shared by every instance of the app, such as Redis, declared in the manifest's
+/// `[caches]` and given by `env.cache(name)`. Tests use `InMemoryCache` from `std.testing`.
+pub interface Cache {
+	/// The value stored under `key`, or, when there's none or it has expired, the value
+	/// `compute` gives, which is stored for `ttl`. `T` is stored as JSON.
+	///
+	/// - While one instance computes a key, the others wait for its value rather than
+	///   computing it too, so a busy key that expires is computed once, not once per caller.
+	/// - Shortly before a value expires, one caller refreshes it while the rest still get the
+	///   old one, and expiry times vary a little, so many keys don't expire at once.
+	/// - A cache that can't be reached doesn't fail the call: `compute` runs, and the host
+	///   logs a warning. So it fails only as `compute` does.
+	///
+	/// ```
+	/// let rates = try this.cache.remember(
+	/// 	"rates",
+	/// 	ttl: Duration.of(minutes: 10),
+	/// 	compute: fn() => try this.bank.rates(),
+	/// )
+	/// ```
+	fn remember<T: Codable<JsonCodec>, E: Error>(
+		key: String,
+		named ttl: Duration,
+		named compute: fn() -> T else E,
+	) -> T else E
+
+	/// Removes `key`, so the next `remember` computes it again, such as after the data it
+	/// came from has changed.
+	fn forget(key: String) else CacheError
+}
+
+/// One rate limit: at most `max` attempts in any window of length `per`, counted separately
+/// for each key of type `K`, such as each `IpAddress`. Declare each one once, as a constant,
+/// so the limit is in one place and every call names it:
+///
+/// ```
+/// const SIGN_IN_BY_IP = Limit<IpAddress>(name: "sign-in-ip", max: 5, per: Duration.of(minutes: 1))
+/// ```
+///
+/// `name` comes before each key in the store, so two limits never share a counter. Two
+/// limits with the same name in one package are a compile error.
+pub record Limit<K: Stringable> {
+	/// What the counts are stored under, followed by the key's text.
+	name: String
+
+	/// The most attempts allowed in any window.
+	max: Int
+
+	/// The length of the window.
+	per: Duration
+}
+
+/// Counts attempts per key across every instance of the app, and says when a key has had
+/// too many. Tests use `InMemoryRateLimiter` from `std.testing`.
+pub interface RateLimiter {
+	/// Records one attempt by `key` against `limit`, and says whether it is within the limit.
+	///
+	/// Unlike a cache, a limiter that can't be reached fails the call with a `CacheError`,
+	/// so a limit is never skipped without anyone deciding to. A handler that passes it on
+	/// with `try` answers with an error page while the store is down. To let the attempt
+	/// through instead, `catch` the error and say so.
+	///
+	/// ```
+	/// let result = try limiter.hit(SIGN_IN_BY_IP, req.clientIp)
+	/// if result is RateLimit.Limited(retryAfter:) {
+	/// 	print("Try again in ${retryAfter.inSeconds} seconds.")
+	/// }
+	/// ```
+	fn hit<K: Stringable>(limit: Limit<K>, key: K) -> RateLimit else CacheError
+}
+
+/// The answer from `RateLimiter.hit`.
+pub enum RateLimit {
+	/// The attempt is within the limit.
+	Allowed
+
+	/// Too many attempts. The key will be allowed again after `retryAfter`.
+	Limited(retryAfter: Duration)
+}
+
+/// What a cache or rate limiter call can fail with.
+pub enum CacheError implements Error {
+	/// The cache's back end couldn't be reached.
+	Unavailable(reason: String)
+
+	/// What went wrong.
+	override get message: String
+}

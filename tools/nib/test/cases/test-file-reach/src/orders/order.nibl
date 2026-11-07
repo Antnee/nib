@@ -1,0 +1,7 @@
+import reach.users
+import reach.users.{User}
+
+// Production code can't reach it.
+fn customer() -> User {
+	return users.testUser()
+}

@@ -1,0 +1,44 @@
+import std.codec.{Codable, Codec}
+
+/// An absolute URL, such as `https://shop.example/sign-in`. A `url"…"` literal with a
+/// scheme is a `Url`; one without is a `RelativeUrl`.
+///
+/// Any scheme is accepted, so `mailto:` and `urn:` values are `Url`s too.
+pub record Url implements Parseable, Stringable, Codable<Codec> {
+	/// Reads an absolute URL.
+	override static fn parse(text: String) -> Url else ParseError
+
+	/// This URL with `path` appended, and `query` added as query parameters,
+	/// percent-encoded. The relative part is always added to the end, so
+	/// `https://api.example/v1` joined with `quotes` is `https://api.example/v1/quotes`.
+	///
+	/// ```
+	/// let link = baseUrl.join(url"orders", query: ["page": page.formatted()])
+	/// ```
+	fn join(path: RelativeUrl, named query: Map<String, String> = [:]) -> Url
+
+	/// This URL with `path` appended and query parameters that are secrets, such as a link
+	/// that carries a token. The result is a secret too, so the token stays out of logs.
+	///
+	/// ```
+	/// let link = baseUrl.join(url"confirm", secretQuery: ["token": token])
+	/// ```
+	fn join(path: RelativeUrl, named secretQuery: Map<String, Sensitive>) -> Secret<Url>
+
+	/// The URL as text.
+	override fn toString() -> String
+}
+
+/// A URL with no scheme or host: a path on this site, such as `/orders/42`, or a part to
+/// append to a base `Url`, such as `carts/42`. A `url"…"` literal without a scheme makes one.
+/// Interpolated values are percent-encoded for the part they land in, so `url"carts/${id}"`
+/// can't gain a segment or a query from a value containing `/` or `?`. Since it has no host,
+/// it can't point at another site.
+pub record RelativeUrl implements Parseable, Stringable, Codable<Codec> {
+	/// Reads a relative URL, such as a `?next=` parameter. Fails if the text has a scheme or
+	/// a host, including one written as `//host`, so the result stays on this site.
+	override static fn parse(text: String) -> RelativeUrl else ParseError
+
+	/// The relative URL as text.
+	override fn toString() -> String
+}

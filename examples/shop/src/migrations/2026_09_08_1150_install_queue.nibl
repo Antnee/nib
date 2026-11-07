@@ -1,0 +1,11 @@
+import std.db.{Db}
+import std.migrations.{Migration, MigrationError}
+import std.queue
+
+/// The database-backed queue's tables. A stdlib feature that needs schema doesn't create it
+/// behind your back: you install it with a migration like any other.
+record InstallQueue implements Migration {
+	override fn apply(db: Db) else MigrationError {
+		try queue.installSchema(db)
+	}
+}

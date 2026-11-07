@@ -1,0 +1,5 @@
+import std.app.{Env}
+
+pub fn main(env: Env) {
+	let _ = env.db("main")
+}

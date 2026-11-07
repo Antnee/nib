@@ -1,0 +1,12 @@
+// expect: only error: a pattern names a variant's values, as building one does: `radius:`
+enum Shape {
+	Circle(radius: Decimal)
+	Square(side: Decimal)
+}
+
+fn size(shape: Shape) -> Decimal {
+	return match shape {
+		Shape.Circle(radius) => radius
+		Shape.Square(side:) => side
+	}
+}

@@ -1,0 +1,71 @@
+// expect: error: `GET /shops/{shopId}/orders/{orderId}` is already a route, on line
+import std.http.{@guard, @path, Request, Response, Route, Routes, ToResponse}
+
+type ShopId: Int implements Parseable
+type OrderId: Int implements Parseable
+
+enum WebError implements ToResponse {
+	NotFound
+
+	override get message: String => "not found"
+
+	override fn toResponse() -> Response {
+		return Response.notFound()
+	}
+}
+
+record User {
+	name: String
+}
+
+record Shop {
+	id: ShopId
+}
+
+class Guards {
+	fn user(req: Request) -> User else WebError {
+		fail WebError.NotFound
+	}
+
+	fn shop(req: Request, @guard user: User, @path shopId: ShopId) -> Shop else WebError {
+		fail WebError.NotFound
+	}
+}
+
+class Pages {
+	fn home(req: Request) -> Response {
+		return Response.notFound()
+	}
+
+	fn order(req: Request, @guard shop: Shop, @path orderId: OrderId) -> Response else WebError {
+		return Response.notFound()
+	}
+
+	fn account(req: Request, @guard user: User) -> Response else WebError {
+		return Response.notFound()
+	}
+
+	fn file(req: Request, @path path: String) -> Response {
+		return Response.notFound()
+	}
+}
+
+class Services {
+	guards: Guards
+	pages: Pages
+}
+
+fn routes() -> Routes<Services> {
+	return Routes(
+		routes: [
+			Route.group(requiring: fn(app) => app.guards.user, routes: [
+				Route.group(prefix: "/shops/{shopId}", requiring: fn(app) => app.guards.shop, routes: [
+					Route.get("/orders/{orderId}", fn(app) => app.pages.order),
+				]),
+				Route.group(prefix: "/shops/{shopId}/orders", requiring: fn(app) => app.guards.shop, routes: [
+					Route.get("/{orderId}", fn(app) => app.pages.order),
+				]),
+			]),
+		],
+	)
+}

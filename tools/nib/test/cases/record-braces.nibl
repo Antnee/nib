@@ -1,0 +1,8 @@
+// expect: error: a record is built with brackets and named fields: `Point(name: value)`
+record Point {
+	x: Int
+}
+
+fn origin() -> Point {
+	return Point { x: 0 }
+}

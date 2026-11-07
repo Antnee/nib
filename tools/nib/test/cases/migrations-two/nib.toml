@@ -1,0 +1,11 @@
+# expect: error: a migration file declares one type that implements `Migration`, but this file has 2: `CreateTags` and `CreateNotes`; give each its own file, named for the order it runs in
+[package]
+name = "demo"
+
+[config]
+DATABASE_URL = { secret = true }
+
+[databases.main]
+engine = "postgres"
+from = "DATABASE_URL"
+migrations = "demo.migrations"

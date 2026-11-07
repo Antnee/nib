@@ -1,0 +1,12 @@
+// expect: error: `subtotal` is a method, so it's called before `.length`: `cart.subtotal().length`
+record Cart {
+	names: List<String>
+
+	fn subtotal() -> String {
+		return ""
+	}
+}
+
+fn run(cart: Cart) -> Int {
+	return cart.subtotal.length
+}

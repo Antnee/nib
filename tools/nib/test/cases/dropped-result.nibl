@@ -1,0 +1,16 @@
+// expect: error: this can fail, and nothing handles its error: put `try` in front, handle it with `catch`, or write `let _ = …` to drop it on purpose
+enum LoadError implements Error {
+	Missing
+	Broken
+
+	override get message: String => "load failed"
+}
+
+fn load(path: String) -> String else LoadError {
+	return path
+}
+
+fn run() {
+	load("a")
+	let _ = load("b")
+}

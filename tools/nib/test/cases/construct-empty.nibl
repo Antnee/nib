@@ -1,0 +1,6 @@
+// expect: warning: an empty `construct() {}` says nothing: leave it out
+class Counter {
+	construct() {}
+
+	var count: Int = 0
+}

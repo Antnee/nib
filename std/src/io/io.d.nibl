@@ -1,0 +1,71 @@
+// Streams of bytes.
+//
+// A stream of bytes is an `Iterable<Bytes, IoError>`: each item is the next chunk, read
+// only when the loop asks for it, so a large upload or file never has to fit in memory. A
+// request body, an open file and an HTTP response all give one, and the transformations in
+// `std.compress.gzip`, `std.csv` and `std.json` turn one stream into another, and `lines`
+// here turns bytes into text:
+//
+// ```
+// let rows = csv.decoding<OrderRow>(gzip.decompressing(req.body.stream()))
+// for row in try rows {
+// 	try db.insert(row)
+// }
+// ```
+//
+// Bytes are written through a `Writer`.
+
+/// What reading or writing a stream of bytes can fail with.
+pub enum IoError implements Error {
+	/// The other end went away before the stream ended, such as a client that disconnected.
+	Disconnected
+
+	/// The stream went on past its size limit, such as a route's limit on request bodies.
+	TooLarge(limit: Int)
+
+	/// The bytes aren't in the format being read, such as damaged gzip data or text that
+	/// isn't UTF-8.
+	Malformed(reason: String)
+
+	/// The operating system or the network reported another failure.
+	Failed(reason: String)
+
+	override get message: String
+}
+
+/// Somewhere bytes are written a chunk at a time: a file, a response body, an upload.
+///
+/// `write` waits while the other end is slow, so memory stays flat. `close` finishes the
+/// write, and is where a last failure can show up, such as a full disk, so it's always
+/// called with `try`. A writer that is never closed is discarded when the unit of work
+/// ends: a file isn't created, an upload isn't completed, and the host logs a warning.
+///
+/// ```
+/// let out = try dir.create(path"export.csv")
+/// for chunk in try csv.encoding(rows) {
+/// 	try out.write(chunk)
+/// }
+/// try out.close()
+/// ```
+pub interface Writer {
+	/// Writes `data` after what was written before.
+	fn write(data: Bytes) else IoError
+
+	/// Finishes the write. Until this succeeds, nothing written is kept.
+	fn close() else IoError
+
+	/// Writes `text` as UTF-8, followed by a line break.
+	fn writeLine(text: String) else IoError {
+		try this.write("${text}\n".toBytes())
+	}
+}
+
+/// The lines of a stream of UTF-8 text, as it's read, without their line endings (`\n` or
+/// `\r\n`). Bytes that aren't UTF-8 stop it with `IoError.Malformed`.
+///
+/// ```
+/// for line in try io.lines(try dir.open(path"access.log")) {
+/// 	print(line)
+/// }
+/// ```
+pub fn lines(source: Iterable<Bytes, IoError>) -> Iterable<String, IoError>

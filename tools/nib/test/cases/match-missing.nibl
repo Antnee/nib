@@ -1,0 +1,17 @@
+// expect: error: this `match` doesn't cover `LoadError.Broken`: add an arm for it, or `_ =>` for the rest
+enum LoadError implements Error {
+	Missing
+	Broken
+
+	override get message: String => "load failed"
+}
+
+fn load(path: String) -> String else LoadError {
+	return path
+}
+
+fn describe(e: LoadError) -> String {
+	return match e {
+		Missing => "missing"
+	}
+}

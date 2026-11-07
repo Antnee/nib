@@ -1,0 +1,26 @@
+{
+	"name": "nib",
+	"displayName": "nib",
+	"description": "Syntax highlighting for Nib (.nibl files)",
+	"version": "0.1.0",
+	"publisher": "antnee",
+	"engines": { "vscode": "^1.80.0" },
+	"categories": ["Programming Languages"],
+	"contributes": {
+		"languages": [
+			{
+				"id": "nib",
+				"aliases": ["Nib", "nib"],
+				"extensions": [".nibl"],
+				"configuration": "./language-configuration.json"
+			}
+		],
+		"grammars": [
+			{
+				"language": "nib",
+				"scopeName": "source.nib",
+				"path": "./syntaxes/nib.tmLanguage.json"
+			}
+		]
+	}
+}

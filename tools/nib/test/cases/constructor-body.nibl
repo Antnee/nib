@@ -1,0 +1,26 @@
+// expect: ok
+// Marked parameters are fields, set before the body; the body sets the rest, then may use `this`.
+class Mailbox {
+	construct(private owner: String, domain: String, named var unread: Int = 0) {
+		if domain == "" {
+			this.address = owner
+		} else {
+			this.address = "${owner}@${domain}"
+		}
+		this.label = "to ${this.address}"
+		print(this.describe())
+	}
+
+	address: String
+	label: String
+	var opened: Int = 0
+
+	fn describe() -> String {
+		return "${this.address} (${this.unread})"
+	}
+}
+
+fn box() -> String {
+	let mailbox = new Mailbox("ann", "example.com", unread: 2)
+	return mailbox.label
+}

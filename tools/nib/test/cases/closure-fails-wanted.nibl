@@ -1,0 +1,18 @@
+// expect: only error: this function can fail with an `E`, but `f` needs one that can't
+enum E implements Error {
+	Bad
+
+	override get message: String => "bad"
+}
+
+fn parse(x: Int) -> Int else E {
+	return x < 0 ? fail E.Bad : x
+}
+
+fn apply(f: fn(Int) -> Int) -> Int {
+	return f(1)
+}
+
+fn applied() -> Int {
+	return apply(fn(x) => try parse(x))
+}

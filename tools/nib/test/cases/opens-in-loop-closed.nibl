@@ -1,0 +1,12 @@
+// expect: ok
+import std.files.{Dir, FileError, Path}
+
+fn count(dir: Dir, paths: List<Path>) -> Int else FileError {
+	var total = 0
+	for path in paths {
+		let file = try dir.open(path)
+		defer file.close()
+		total += 1
+	}
+	return total
+}

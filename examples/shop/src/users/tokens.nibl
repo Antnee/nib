@@ -1,0 +1,38 @@
+import std.codec.{Case}
+import std.crypto.{TokenHash}
+import std.db.{@db}
+import std.time.{Duration, Instant}
+import shop.core.{RepositoryError}
+
+/// What a single-use token is for. Stored as its backing value.
+enum TokenPurpose: String {
+	Confirm = "confirm"
+	ResetPassword = "reset_password"
+
+	get lifetime: Duration => match this {
+		TokenPurpose.Confirm => Duration.of(hours: 24)
+		TokenPurpose.ResetPassword => Duration.of(hours: 1)
+	}
+}
+
+/// A token as stored: only its hash, never the token itself.
+@db(table: "user_tokens", columns: Case.Snake)
+record IssuedToken {
+	userId: UserId
+	purpose: TokenPurpose
+	hash: TokenHash
+	expiresAt: Instant
+	usedAt: Instant? = null
+}
+
+interface TokenRepository {
+	fn save(token: IssuedToken) else RepositoryError
+
+	/// An unused, unexpired token with this hash and purpose.
+	fn findUsable(hash: TokenHash, purpose: TokenPurpose, named now: Instant) -> IssuedToken? else RepositoryError
+
+	fn markUsed(hash: TokenHash, named at: Instant) else RepositoryError
+
+	/// Marks every unused token the user has for `purpose` as used.
+	fn revokeAll(userId: UserId, purpose: TokenPurpose, named at: Instant) else RepositoryError
+}

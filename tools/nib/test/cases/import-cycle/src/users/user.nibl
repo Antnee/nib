@@ -1,0 +1,8 @@
+import demo.orders.{Order}
+
+type UserId: Int
+
+record User {
+	id: UserId
+	lastOrder: Order?
+}

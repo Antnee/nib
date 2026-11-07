@@ -1,0 +1,4 @@
+// expect: error: this is a `String`, but this generator yields an `Int`
+fn wrong() -> Iterable<Int> {
+	yield "one"
+}

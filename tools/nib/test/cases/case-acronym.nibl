@@ -1,0 +1,4 @@
+// expect: error: acronyms written as words
+record HTTPClient {
+	id: Int
+}

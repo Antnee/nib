@@ -1,0 +1,9 @@
+# expect: error: [directories] `out` needs `access`
+[package]
+name = "demo"
+
+[config]
+OUT_DIR = {}
+
+[directories.out]
+from = "OUT_DIR"

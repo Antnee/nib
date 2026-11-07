@@ -1,0 +1,4 @@
+// expect: warning: lines should fit in 120 (a tab counts as four). `fmt` never splits a string: give the text a line of its own
+fn long() -> String {
+	return "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+}

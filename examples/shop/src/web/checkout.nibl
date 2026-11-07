@@ -1,0 +1,80 @@
+import std.http.{@guard, @path, Request, Response, Status}
+import std.log
+import access.{Access}
+import shop.integrations.{Analytics, Event}
+import shop.orders.{CartAction, CartId, CartRepository, CheckoutError, CheckoutService, PaymentError, TaxError}
+import shop.ui with {CheckoutForm, PageContext}
+import shop.users.{User}
+
+class CheckoutHandlers {
+	construct(
+		named private checkout: CheckoutService,
+		named private carts: CartRepository,
+		named private access: Access<User>,
+		named private analytics: Analytics,
+		named private stripePublishableKey: String,
+	) {}
+
+	fn show(@guard page: PageContext, @guard user: User, @path cartId: CartId) -> Response else WebError {
+		let cart = try this.carts.find(cartId) ?? return Response.notFound()
+		this.access.ensure(user, can: CartAction.View, on: cart) catch denied {
+			log.channel("security").info("access denied", fields: ["reason": denied.reason.message])
+			// Everything here belongs to someone, so a refusal looks like a missing page. A 403
+			// would confirm the cart exists.
+			return Response.notFound()
+		}
+		return Response.html(ui.checkoutPage(page, cart, stripeKey: this.stripePublishableKey))
+	}
+
+	fn placeOrder(
+		req: Request,
+		@guard page: PageContext,
+		@guard user: User,
+		@path cartId: CartId,
+	) -> Response else WebError {
+		let form = req.body.form<CheckoutForm>() catch _ {
+			return Response.badRequest()
+		}
+
+		let receipt = this.checkout.run(cartId, form.paymentToken, customer: user) catch err {
+			match err {
+				CheckoutError.OutOfStock(skus:) => {
+					return Response.html(ui.outOfStockPage(page, skus), status: Status.CONFLICT)
+				}
+				CheckoutError.PaymentFailed(PaymentError.Declined(reason:)) => {
+					log.info("payment declined", fields: ["reason": reason])
+					return this.paymentProblem(page, "Your card was declined. Try another card, or contact your bank.")
+				}
+				CheckoutError.PaymentFailed(PaymentError.Unavailable) => {
+					let message = """
+						We couldn't confirm your payment. If your card was charged, contact us and we'll sort it out.
+						"""
+					return this.paymentProblem(page, message)
+				}
+				CheckoutError.CartNotFound or CheckoutError.EmptyCart => return Response.notFound()
+				CheckoutError.TaxFailed(TaxError.UnsupportedCountry(country:)) => {
+					let message = "We can't deliver to ${country} yet."
+					let body = ui.messagePage(page, title: "Can't deliver there", message:)
+					return Response.html(body, status: Status.UNPROCESSABLE_CONTENT)
+				}
+				CheckoutError.ShippingFailed or CheckoutError.InventoryFailed or
+					CheckoutError.MixedCurrencies or CheckoutError.Storage => fail err
+			}
+		}
+
+		// Redirect after the post, so a refresh can't place the order twice.
+		req.session.flash(NOTICE, "Thanks: your order is placed.")
+		return Response.redirect(url"/").onSent(fn() {
+			this.analytics.track(Event.OrderPlaced(orderId: receipt.orderId, total: receipt.total)) catch err {
+				log.warn("analytics event not sent", fields: ["error": err])
+			}
+		})
+	}
+
+	private fn paymentProblem(page: PageContext, message: String) -> Response {
+		return Response.html(
+			ui.messagePage(page, title: "Payment not taken", message:),
+			status: Status.PAYMENT_REQUIRED,
+		)
+	}
+}

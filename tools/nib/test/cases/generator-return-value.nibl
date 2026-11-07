@@ -1,0 +1,5 @@
+// expect: error: a generator gives its items with `yield`; `return` ends it, without a value
+fn wrong() -> Iterable<Int> {
+	yield 1
+	return 2
+}

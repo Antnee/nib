@@ -1,0 +1,10 @@
+# expect: error: there's no database called `mian` in nib.toml
+[package]
+name = "demo"
+
+[config]
+DATABASE_URL = { secret = true }
+
+[databases.main]
+engine = "postgres"
+from = "DATABASE_URL"

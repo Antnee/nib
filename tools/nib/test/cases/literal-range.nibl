@@ -1,0 +1,4 @@
+// expect: error: `300` doesn't fit in a `UInt8`, which holds 0 to 255
+fn run() {
+	let small: UInt8 = 300
+}

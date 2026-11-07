@@ -1,0 +1,4 @@
+// expect: ok
+fn pad(text: String) -> String {
+	return "${text.padStart(6)}${text.padStart(6, fill: "0")}"
+}

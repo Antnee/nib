@@ -1,0 +1,8 @@
+import std.http.{@guard, Response}
+import shop.ui with {PageContext}
+
+class SiteHandlers {
+	fn home(@guard page: PageContext) -> Response {
+		return Response.html(ui.homePage(page))
+	}
+}

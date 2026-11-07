@@ -1,0 +1,142 @@
+import std.codec.{Case}
+import std.crypto.{TokenHash}
+import std.crypto.passwords.{PasswordHash}
+import std.db.{@db, Db}
+import std.time.{Instant}
+import shop.core.{RepositoryError}
+import shop.users.{
+	Creation,
+	Email,
+	EMAIL_INDEX,
+	EmailKey,
+	IssuedToken,
+	TokenPurpose,
+	TokenRepository,
+	User,
+	UserId,
+	UserRepository,
+}
+
+@db(columns: Case.Snake)
+record CreationRow {
+	id: UserId
+	created: Bool
+}
+
+class SqlUserRepository implements UserRepository {
+	construct(private db: Db) {}
+
+	override fn find(id: UserId) -> User? else RepositoryError {
+		return try this.db.queryOne<User>(sql"""
+			select id, email, password_hash, session_version, confirmed_at, created_at from users where id = ${id}
+			""")
+	}
+
+	override fn findByEmail(email: Email) -> User? else RepositoryError {
+		// The email column is encrypted, so look it up by its blind index instead.
+		let index = try this.db.blindIndex(EMAIL_INDEX, email)
+		return try this.db.queryOne<User>(sql"""
+			select id, email, password_hash, session_version, confirmed_at, created_at from users
+			where email_idx = ${index}
+			""")
+	}
+
+	override fn emailKey(email: Email) -> EmailKey else RepositoryError {
+		return EmailKey(try this.db.blindIndex(EMAIL_INDEX, email))
+	}
+
+	override fn findByEmailKey(key: EmailKey) -> User? else RepositoryError {
+		return try this.db.queryOne<User>(sql"""
+			select id, email, password_hash, session_version, confirmed_at, created_at from users
+			where email_idx = ${key}
+			""")
+	}
+
+	override fn createIfAbsent(
+		email: Email,
+		passwordHash: PasswordHash,
+		named at: Instant,
+	) -> Creation else RepositoryError {
+		// Reads decrypt `email` because `User` marks it `@db(encrypt:)`. A hand-written insert
+		// has no record to take that from, so it encrypts and indexes the value itself, with
+		// the keyrings attached to the database.
+		let encrypted = try this.db.encrypt(email, keyring: "pii")
+		let index = try this.db.blindIndex(EMAIL_INDEX, email)
+		// One statement whichever happens: the new row's ID, or the existing one's.
+		let row = try this.db.queryOne<CreationRow>(sql"""
+			with inserted as (
+				insert into users (email, email_idx, password_hash, created_at)
+				values (${encrypted}, ${index}, ${passwordHash}, ${at})
+				on conflict (email_idx) do nothing
+				returning id
+			)
+			select id, true as created from inserted
+			union all
+			select id, false as created from users where email_idx = ${index}
+			""")
+		if row is not null {
+			return row.created ? Creation.Created(userId: row.id) : Creation.AlreadyRegistered(userId: row.id)
+		}
+		// A sign-up for the same address committed while this statement ran, too late for it
+		// to see. It has committed by now.
+		let existing = try this.findByEmail(email) ?? panic("a conflicting sign-up was not committed")
+		return Creation.AlreadyRegistered(userId: existing.id)
+	}
+
+	override fn saveCredentials(
+		id: UserId,
+		named passwordHash: PasswordHash,
+		named confirmedAt: Instant?,
+	) else RepositoryError {
+		try this.db.execute(
+			sql"update users set password_hash = ${passwordHash}, confirmed_at = ${confirmedAt} where id = ${id}",
+		)
+	}
+
+	override fn upgradePasswordHash(
+		id: UserId,
+		named current: PasswordHash,
+		named upgraded: PasswordHash,
+	) -> Bool else RepositoryError {
+		let replaced = try this.db.countChanges(sql"""
+			update users set password_hash = ${upgraded}
+			where id = ${id} and password_hash = ${current}
+			""")
+		return replaced == 1
+	}
+
+	override fn endSessions(id: UserId) else RepositoryError {
+		try this.db.execute(sql"update users set session_version = session_version + 1 where id = ${id}")
+	}
+}
+
+class SqlTokenRepository implements TokenRepository {
+	construct(private db: Db) {}
+
+	override fn save(token: IssuedToken) else RepositoryError {
+		try this.db.insert(token)
+	}
+
+	override fn findUsable(
+		hash: TokenHash,
+		purpose: TokenPurpose,
+		named now: Instant,
+	) -> IssuedToken? else RepositoryError {
+		return try this.db.queryOne<IssuedToken>(sql"""
+			select user_id, purpose, hash, expires_at, used_at from user_tokens
+			where hash = ${hash} and purpose = ${purpose} and used_at is null and expires_at > ${now}
+			for update
+			""")
+	}
+
+	override fn markUsed(hash: TokenHash, named at: Instant) else RepositoryError {
+		try this.db.execute(sql"update user_tokens set used_at = ${at} where hash = ${hash}")
+	}
+
+	override fn revokeAll(userId: UserId, purpose: TokenPurpose, named at: Instant) else RepositoryError {
+		try this.db.execute(sql"""
+			update user_tokens set used_at = ${at}
+			where user_id = ${userId} and purpose = ${purpose} and used_at is null
+			""")
+	}
+}

@@ -1,0 +1,19 @@
+// expect: ok
+import std.db.{Db, DbError, Tx}
+
+class Work {
+	construct(private tx: Tx) {}
+}
+
+fn clear(db: Db) else DbError {
+	let tx = try db.begin()
+	defer tx.rollback()
+	try tx.execute(sql"delete from carts")
+	try tx.commit()
+}
+
+// Handed on, so ending it is the receiver's job.
+fn beginWork(db: Db) -> Work else DbError {
+	let tx = try db.begin()
+	return new Work(tx)
+}

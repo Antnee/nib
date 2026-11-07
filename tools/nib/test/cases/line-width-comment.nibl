@@ -1,0 +1,5 @@
+// expect: warning: `fmt` never rewraps a comment, so break it onto more lines yourself
+fn long() -> Int {
+	// This comment runs on and on past the column where lines should stop, which fmt leaves alone because comments are text.
+	return 1
+}

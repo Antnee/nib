@@ -1,0 +1,21 @@
+// expect: error: this is a `Circle`, but `shape` needs a `Shape`: `Circle` doesn't implement `Shape`
+interface Shape {
+	get area: Decimal
+}
+
+record Square implements Shape {
+	side: Decimal
+
+	override get area: Decimal => this.side
+}
+
+record Circle {
+	radius: Decimal
+}
+
+fn describe(shape: Shape) {}
+
+fn run(square: Square, circle: Circle) {
+	describe(square)
+	describe(circle)
+}

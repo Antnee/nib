@@ -1,0 +1,4 @@
+// expect: ok
+record Hooks {
+	onError: (fn(String) -> Void)? = null
+}

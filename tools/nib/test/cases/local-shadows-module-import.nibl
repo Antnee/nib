@@ -1,0 +1,7 @@
+// expect: error: is the name of an imported module
+import std.log
+
+fn f() {
+	let log = 1
+	print("${log}")
+}

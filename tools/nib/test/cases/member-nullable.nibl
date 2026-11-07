@@ -1,0 +1,4 @@
+// expect: error: `Int` has no member `size`
+fn longest(names: List<String>) -> Int {
+	return names.first?.length.size ?? 0
+}

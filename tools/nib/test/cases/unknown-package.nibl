@@ -1,0 +1,5 @@
+// expect: error: unknown package `vendor`
+import vendor.payments
+
+fn f() {
+}

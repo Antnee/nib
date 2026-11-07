@@ -1,0 +1,4 @@
+// expect: error: this line is 153 columns wide, over the limit of 150 (a tab counts as four): break it up
+fn long() -> String {
+	return "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+}

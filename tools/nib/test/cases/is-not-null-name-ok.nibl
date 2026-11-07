@@ -1,0 +1,17 @@
+// expect: ok
+// A field is put in a `let` before it's tested; a local or a parameter is narrowed by the test.
+class Session {
+	var user: String? = null
+
+	fn welcome() -> String {
+		let name = this.user
+		if name is not null {
+			return "Welcome back, ${name}"
+		}
+		return "Welcome"
+	}
+}
+
+fn shout(text: String?) -> String {
+	return text is not null ? text.toUpperCase() : ""
+}

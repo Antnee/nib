@@ -1,0 +1,4 @@
+// expect: error: `UploadError` implements `Error` but doesn't define `message`
+record UploadError implements Error {
+	bytes: Int
+}

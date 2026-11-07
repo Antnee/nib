@@ -1,0 +1,15 @@
+fn names(users: List<User>) -> List<String> {
+	return users
+		.filter(fn(user) => user.isActive)
+		.map(fn(user) => user.name)
+}
+
+fn long(users: List<User>) -> List<String> {
+	return users.filter(fn(user) => user.isActive and user.hasConfirmedTheirEmailAddress).map(fn(user) => user.displayName).sorted()
+}
+
+fn hug() -> Response {
+	return Response.redirect(url"/").onSent(fn() {
+		track()
+	})
+}
